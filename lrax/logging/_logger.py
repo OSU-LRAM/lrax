@@ -58,7 +58,7 @@ class Logger(ABC):
         """
         raise NotImplementedError
 
-    def finalize(self) -> None:
+    def cleanup(self) -> None:
         """Release any resources held by the logger.
 
         This is a no-op by default; subclasses that hold open resources, e.g., a file
@@ -131,19 +131,19 @@ class FileLogger(Logger):
 
         self._step += 1
 
-    def finalize(self) -> None:
+    def cleanup(self) -> None:
         self._metrics_file.close()
 
 
 class MultiLogger(Logger):
-    """Fans a single logging call out to multiple loggers."""
+    """Wrapper for multiple loggers."""
 
     def __init__(self, loggers: Sequence[Logger]):
         """Create a new multi-logger.
 
         Parameters
         ----------
-        - `loggers`: The loggers to fan out to.
+        - `loggers`: The loggers to wrap.
         """
         self.loggers = list(loggers)
 
@@ -153,8 +153,8 @@ class MultiLogger(Logger):
     def log_metrics(self, metrics: Metrics, step: Optional[int] = None) -> None:
         jtu.tree_map(lambda logger: logger.log_metrics(metrics, step), self.loggers)
 
-    def finalize(self) -> None:
-        jtu.tree_map(lambda logger: logger.finalize(), self.loggers)
+    def cleanup(self) -> None:
+        jtu.tree_map(lambda logger: logger.cleanup(), self.loggers)
 
 
 class WandbLogger(Logger):
@@ -183,5 +183,5 @@ class WandbLogger(Logger):
     def log_metrics(self, metrics: Metrics, step: Optional[int] = None) -> None:
         self._run.log(metrics, step=step)
 
-    def finalize(self) -> None:
+    def cleanup(self) -> None:
         self._run.finish()
