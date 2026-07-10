@@ -18,8 +18,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-from ._actor import Actor
-from ._critic import Critic
+from ._actor_critic import Actor, Critic
 from ._initialization import affine_initialization
 from ._lipswish import lipswish
 from ._spd import SPD
