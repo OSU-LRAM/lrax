@@ -31,7 +31,7 @@ from optax import OptState
 
 from .._custom_types import Metrics, Optimizer
 from .._epsilon import EPSILON
-from ..env import Env, EnvState
+from ..env import AbstractEnv, EnvState
 from ..nn._actor_critic import ActorCritic
 from ._algorithm import AbstractAlgorithm
 
@@ -162,7 +162,12 @@ class PPO(AbstractAlgorithm):
     max_lr: float = 1e-2
 
     def _rollout(
-        self, model: ActorCritic, env: Env, env_state: EnvState, *, key: PRNGKeyArray
+        self,
+        model: ActorCritic,
+        env: AbstractEnv,
+        env_state: EnvState,
+        *,
+        key: PRNGKeyArray,
     ) -> tuple[Rollout, EnvState]:
         """Collect `num_steps` transitions from `env`, starting at `env_state`.
 
@@ -361,7 +366,7 @@ class PPO(AbstractAlgorithm):
         model: ActorCritic,
         opt_state: OptState,
         optim: Optimizer,
-        env: Env,
+        env: AbstractEnv,
         env_state: EnvState,
         key: PRNGKeyArray,
     ) -> tuple[ActorCritic, OptState, EnvState, Metrics]:

@@ -35,7 +35,7 @@ class EnvState(eqx.Module):
     info: dict[str, Array]
 
 
-class Env(eqx.Module):
+class AbstractEnv(eqx.Module):
     """Abstract base class for a simulation environment."""
 
     obs_size: eqx.AbstractVar[int]

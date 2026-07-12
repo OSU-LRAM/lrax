@@ -25,7 +25,7 @@ from jaxtyping import PRNGKeyArray
 from optax import OptState
 
 from .._custom_types import Metrics, Optimizer
-from ..env import Env, EnvState
+from ..env import AbstractEnv, EnvState
 from ..nn import ActorCritic
 
 
@@ -38,7 +38,7 @@ class AbstractAlgorithm(eqx.Module):
         model: ActorCritic,
         opt_state: OptState,
         optim: Optimizer,
-        env: Env,
+        env: AbstractEnv,
         env_state: EnvState,
         key: PRNGKeyArray,
     ) -> tuple[ActorCritic, OptState, EnvState, Metrics]:

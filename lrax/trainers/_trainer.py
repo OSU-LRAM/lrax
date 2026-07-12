@@ -31,7 +31,7 @@ from tqdm import tqdm
 
 from .._custom_types import Metrics, Optimizer
 from ..algorithms import AbstractAlgorithm
-from ..env import Env
+from ..env import AbstractEnv
 from ..logging import Logger
 from ..nn import ActorCritic
 from ._callbacks import Callback, StopTraining
@@ -240,7 +240,7 @@ class PolicyTrainer(Trainer):
         self,
         key: PRNGKeyArray,
         model: ActorCritic,
-        env: Env,
+        env: AbstractEnv,
         algorithm: AbstractAlgorithm,
         optim: Optimizer,
         *,
