@@ -18,17 +18,9 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-from ._callbacks import Callback, StopOnNaN, StopTraining
-from ._checkpoint import Checkpoint
-from ._hyperparams import load_params_from_yaml
-from ._trainer import ModelTrainer, PolicyTrainer
+import jax
+import jax.numpy as jnp
 
-__all__ = [
-    "Callback",
-    "StopOnNaN",
-    "StopTraining",
-    "Checkpoint",
-    "load_params_from_yaml",
-    "ModelTrainer",
-    "PolicyTrainer",
-]
+EPSILON = (
+    jnp.finfo(jnp.float64).eps if jax.enable_x64.value else jnp.finfo(jnp.float32).eps
+)

@@ -18,6 +18,8 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
+import optax
 from jaxtyping import ScalarLike
 
 type Metrics = dict[str, ScalarLike]
+type Optimizer = optax.GradientTransformation | optax.GradientTransformationExtraArgs

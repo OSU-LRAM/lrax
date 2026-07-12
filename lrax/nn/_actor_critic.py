@@ -25,7 +25,7 @@ import jax.nn as jnn
 import jax.numpy as jnp
 import jax.random as jr
 from equinox.internal import doc_repr
-from jaxtyping import Array, PRNGKeyArray, ScalarLike
+from jaxtyping import Array, PRNGKeyArray
 
 _identity = doc_repr(lambda x: x, "lambda x: x")
 _elu = doc_repr(jnn.elu, "<function elu>")
@@ -85,7 +85,7 @@ class Actor(eqx.Module):
         """
         return self.mlp(obs)
 
-    def sample(self, obs: Array, *, key: PRNGKeyArray) -> tuple[Array, ScalarLike]:
+    def sample(self, obs: Array, *, key: PRNGKeyArray) -> tuple[Array, Array]:
         """Draw a reparameterized action sample and its log-probability.
 
         Parameters
@@ -105,7 +105,7 @@ class Actor(eqx.Module):
         action = mean + std * jr.normal(key, mean.shape)
         return action, self.log_prob(obs, action)
 
-    def log_prob(self, obs: Array, value: Array) -> ScalarLike:
+    def log_prob(self, obs: Array, value: Array) -> Array:
         """The log-probability of `value` summed over the action dimensions.
 
         Parameters
@@ -192,3 +192,15 @@ class Critic(eqx.Module):
         A scalar JAX array, the estimated value of `obs`.
         """
         return self.mlp(obs)
+
+
+class ActorCritic(eqx.Module):
+    """Bundles an `Actor` and a `Critic` into a single pytree.
+
+    Algorithms such as PPO update both networks from one loss function, and the
+    training step machinery in `lrax.trainers` operates on a single model pytree;
+    `ActorCritic` gives them that single pytree to differentiate through.
+    """
+
+    actor: Actor
+    critic: Critic

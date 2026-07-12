@@ -18,9 +18,9 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-from ._actor_critic import Actor, Critic
+from ._actor_critic import Actor, ActorCritic, Critic
 from ._initialization import affine_initialization
 from ._lipswish import lipswish
 from ._spd import SPD
 
-__all__ = ["Actor", "affine_initialization", "Critic", "lipswish", "SPD"]
+__all__ = ["Actor", "ActorCritic", "affine_initialization", "Critic", "lipswish", "SPD"]
