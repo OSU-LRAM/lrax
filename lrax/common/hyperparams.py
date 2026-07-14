@@ -25,9 +25,11 @@ import yaml
 
 if TYPE_CHECKING:
     from _typeshed import DataclassInstance
+else:
+    type DataclassInstance = Any
 
 
-def load_params_from_yaml(fp: str) -> "DataclassInstance":
+def load_params_from_yaml(fp: str) -> DataclassInstance:
     """Load training parameters from a YAML file.
 
     Parameters

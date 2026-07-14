@@ -34,7 +34,7 @@ class EnvState(eqx.Module):
     obs: Array
     reward: Array
     done: Array
-    metrics: Metrics
+    aux: Metrics
 
 
 class AbstractEnv(eqx.Module):

@@ -45,6 +45,7 @@ class Rollout(eqx.Module):
     values: Array
     rewards: Array
     dones: Array
+    metrics: Metrics
 
 
 class Batch(eqx.Module):
@@ -182,9 +183,8 @@ class PPO(AbstractAlgorithm):
 
         Returns
         -------
-        A `(rollouts, env_state)` tuple: the collected `Rollout`, with each field of
-        shape `(num_steps, env.num_envs, ...)`, and the environment state to resume
-        from on the next call.
+        A pytree of rollout states and the environment state to resume from on the next
+        call.
         """
         step_keys = jr.split(key, self.num_steps)
 
@@ -201,6 +201,7 @@ class PPO(AbstractAlgorithm):
                 values=values,
                 rewards=next_state.reward,
                 dones=next_state.done,
+                metrics=next_state.aux,
             )
             return next_state, rollout
 
@@ -217,8 +218,7 @@ class PPO(AbstractAlgorithm):
 
         Returns
         -------
-        A `(loss, metrics)` tuple: the scalar loss to differentiate, and a
-        dictionary of scalar metrics for logging.
+        The scalar loss and a pytree of metrics used for logging/analytics.
         """
         log_probs = jax.vmap(model.actor.log_prob)(batch.obs, batch.actions)
         values = jax.vmap(model.critic)(batch.obs)
@@ -408,6 +408,9 @@ class PPO(AbstractAlgorithm):
         model, opt_state, metrics = self._update(
             model, opt_state, optim, batch, key=update_key
         )
+
+        # merge the environment metrics with the loss metrics
+        metrics.update(jtu.tree_map(jnp.mean, rollouts.metrics))
         metrics["mean_reward"] = jnp.mean(rollouts.rewards)
         metrics["done_rate"] = jnp.mean(rollouts.dones)
 
