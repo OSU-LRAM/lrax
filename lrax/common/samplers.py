@@ -18,6 +18,28 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-from ._env import AbstractEnv, EnvState
+import equinox as eqx
+import jax.numpy as jnp
+from jaxtyping import Array, ArrayLike, Num, PyTree, ScalarLike, Shaped
 
-__all__ = ["AbstractEnv", "EnvState"]
+_S = PyTree[Shaped[ArrayLike, "?*s"], "S"]
+
+
+class ZeroOrderSampler(eqx.Module):
+    """Select the most recent element at or before the sampling time `t`."""
+
+    ts: Num[Array, "horizon"]
+    ys: Num[_S, "horizon"]
+
+    def __check_init__(self):
+        if self.ys.shape[0] != self.ts.shape[0]:
+            raise ValueError(
+                "Must have ts.shape[0] == ys.shape[0], that is to say the same "
+                "number of entries along the timelike dimension."
+            )
+
+    @eqx.filter_jit
+    def evaluate(self, t0: ScalarLike) -> _S:
+        sample = jnp.searchsorted(self.ts, t0, side="right") - 1
+        idx = jnp.clip(sample, 0, self.ys.shape[0] - 1)
+        return self.ys[idx]

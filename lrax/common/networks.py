@@ -24,11 +24,13 @@ import equinox as eqx
 import jax
 import jax.nn as jnn
 import jax.numpy as jnp
+import jax.random as jr
 from equinox.internal import doc_repr
 from jaxtyping import Array, PRNGKeyArray
 
-from ._lipswish import lipswish
+from .activations import lipswish
 
+_tanh = doc_repr(jnn.tanh, "<function tanh>")
 _identity = doc_repr(lambda x: x, "lambda x: x")
 _lipswish = doc_repr(lipswish, "<function lipswish>")
 _softplus = doc_repr(jnn.softplus, "<function softplus>")
@@ -108,3 +110,69 @@ class SPD(eqx.Module):
         V, w = jax.lax.linalg.eigh(U, sort_eigenvalues=False)
         M = V @ jnp.diag(self.metric(w)) @ V.T
         return M
+
+
+class TamedMLP(eqx.Module):
+    """Implements a tamed MLP, which helps prevent model blow-up during training.
+
+    For additional information, see,
+
+    "On neural differential equations"
+    (https://ora.ox.ac.uk/objects/uuid:af32d844-df84-4fdc-824d-44bebc3d7aa9)
+    """
+
+    mlp: eqx.nn.MLP
+    out_scale: Array
+
+    def __init__(
+        self,
+        in_size: int,
+        out_size: int,
+        width_size: int,
+        depth: int,
+        activation: Callable = _lipswish,
+        final_activation: Callable = _tanh,
+        *,
+        key: PRNGKeyArray,
+    ):
+        """Initialize an SPD network.
+
+        Parameters
+        ----------
+        - `in_size`: The input size. The input to the module should be a vector of
+            shape `(in_features,)`
+        - `out_size`: The output size. The output from the module will be a vector
+            of shape `(out_features,)`.
+        - `width_size`: The size of each hidden layer.
+        - `depth`: The number of hidden layers, including the output layer.
+        - `activation`: The activation function after each hidden layer. Defaults to
+            `lipswish`.
+        - `final_activation`: The activation function after the output layer. Defaults
+            to `jax.nn.tanh`.
+        - `key`: A `jax.random.key` used to provide randomness for parameter
+            initialisation. (Keyword only argument.)
+        """
+        keys = jr.split(key)
+        self.out_scale = jr.normal(keys[0])
+        self.mlp = eqx.nn.MLP(
+            in_size,
+            out_size,
+            width_size,
+            depth,
+            activation,
+            final_activation,
+            key=keys[1],
+        )
+
+    def __call__(self, x: Array) -> Array:
+        """Forward pass of the network.
+
+        Parameters
+        ----------
+        - `x`: A JAX array with shape `(in_size,)`.
+
+        Returns
+        -------
+        A JAX array with shape `(out_size,)`.
+        """
+        return self.out_scale * self.mlp(x)

@@ -31,9 +31,9 @@ from optax import OptState
 
 from .._custom_types import Metrics, Optimizer
 from .._epsilon import EPSILON
-from ..env import AbstractEnv, EnvState
-from ..nn._actor_critic import ActorCritic
-from ._algorithm import AbstractAlgorithm
+from ..common.algorithm import AbstractAlgorithm
+from ..common.envs import AbstractEnv, EnvState
+from ..common.policies import ActorCritic
 
 
 class Rollout(eqx.Module):

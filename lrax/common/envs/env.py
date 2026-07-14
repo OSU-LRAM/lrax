@@ -24,6 +24,8 @@ from typing import Any
 import equinox as eqx
 from jaxtyping import Array, PRNGKeyArray
 
+from ..._custom_types import Metrics
+
 
 class EnvState(eqx.Module):
     """The state of a vectorized environment."""
@@ -32,7 +34,7 @@ class EnvState(eqx.Module):
     obs: Array
     reward: Array
     done: Array
-    info: dict[str, Array]
+    metrics: Metrics
 
 
 class AbstractEnv(eqx.Module):

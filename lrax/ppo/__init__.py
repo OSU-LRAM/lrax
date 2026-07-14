@@ -18,15 +18,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-from dataclasses import dataclass
-from pathlib import Path
-from typing import Literal, Optional
+from .policies import Actor, ActorCritic, Critic
+from .ppo import PPO
 
-
-@dataclass
-class Checkpoint:
-    """Parameters used to checkpoint a model."""
-
-    path: Path
-    monitor: Optional[str] = None
-    mode: Literal["min", "max", "latest"] = "latest"
+__all__ = ["Actor", "Critic", "ActorCritic", "PPO"]

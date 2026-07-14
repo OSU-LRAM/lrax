@@ -19,12 +19,37 @@
 # THE SOFTWARE.
 
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional, Sequence
 
-from ._cluster import Cluster
-from ._resources import Resources
+
+@dataclass
+class Resources:
+    """Compute resources requested for a single Slurm job.
+
+    Bundling the partition alongside the resource counts keeps the two in sync, e.g.,
+    a job requesting a GPU should also request the partition that has GPUs.
+    """
+
+    partition: str
+    time: str
+    gpus: int = 0
+    cpus: int = 1
+    mem: str = "8G"
+
+
+@dataclass
+class Cluster:
+    """Configuration for a Slurm cluster, shared across every job submitted to it."""
+
+    account: str
+    work_dir: str
+    default_resources: Resources
+    modules: Sequence[str] = field(default_factory=tuple)
+    venv: Optional[str] = None
+    mail_user: Optional[str] = None
+    mail_type: str = "BEGIN,END,FAIL"
 
 
 @dataclass

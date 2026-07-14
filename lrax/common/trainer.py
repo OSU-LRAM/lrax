@@ -19,7 +19,8 @@
 # THE SOFTWARE.
 
 from dataclasses import dataclass
-from typing import Any, Callable, Optional, Sequence, assert_never
+from pathlib import Path
+from typing import Any, Callable, Literal, Optional, Sequence, assert_never
 
 import equinox as eqx
 import jax.numpy as jnp
@@ -30,12 +31,11 @@ from lightning.pytorch import LightningDataModule
 from tqdm import tqdm
 
 from .._custom_types import Metrics, Optimizer
-from ..algorithms import AbstractAlgorithm
-from ..env import AbstractEnv
-from ..logging import Logger
-from ..nn import ActorCritic
-from ._callbacks import Callback, StopTraining
-from ._checkpoint import Checkpoint
+from .algorithm import AbstractAlgorithm
+from .callbacks import Callback, StopTraining
+from .envs import AbstractEnv
+from .logger import Logger
+from .policies import ActorCritic
 
 # takes either (model, batch, keys) or, when `filter_spec` is set, (diff_model,
 # static_model, batch, keys); returns ((loss, metrics), grads)
@@ -43,7 +43,16 @@ type LossFn = Callable[..., tuple[tuple[ScalarLike, Metrics], PyTree]]
 
 
 @dataclass
-class Trainer:
+class Checkpoint:
+    """Parameters used to checkpoint a model."""
+
+    path: Path
+    monitor: Optional[str] = None
+    mode: Literal["min", "max", "latest"] = "latest"
+
+
+@dataclass
+class BaseTrainer:
     """Base class for trainers."""
 
     name: str
@@ -66,7 +75,7 @@ class Trainer:
 
 
 @dataclass
-class ModelTrainer(Trainer):
+class ModelTrainer(BaseTrainer):
     """Trains an Equinox model with a standard supervised training loop."""
 
     def fit(
@@ -227,19 +236,13 @@ class ModelTrainer(Trainer):
 
 
 @dataclass
-class PolicyTrainer(Trainer):
-    """Trains an `ActorCritic` model by repeatedly calling an `Algorithm`'s `step`.
-
-    `PolicyTrainer` only drives the outer loop (calling `step`, logging, checkpointing,
-    early stopping); it has no knowledge of rollouts, losses, or how `algorithm`
-    interacts with `env` — that's exactly what lets the same loop train PPO, SHAC, or
-    any other `Algorithm`.
-    """
+class PolicyTrainer(BaseTrainer):
+    """Train a policy using the provided RL algorithm."""
 
     def learn(
         self,
         key: PRNGKeyArray,
-        model: ActorCritic,
+        model: ActorCritic | eqx.Module,
         env: AbstractEnv,
         algorithm: AbstractAlgorithm,
         optim: Optimizer,
@@ -247,7 +250,7 @@ class PolicyTrainer(Trainer):
         num_iterations: int,
         checkpoint: Optional[Checkpoint] = None,
         callbacks: Sequence[Callback] = (),
-    ) -> ActorCritic:
+    ) -> ActorCritic | eqx.Module:
         """Train `model` against `env` using `algorithm`.
 
         Parameters

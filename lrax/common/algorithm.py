@@ -25,8 +25,8 @@ from jaxtyping import PRNGKeyArray
 from optax import OptState
 
 from .._custom_types import Metrics, Optimizer
-from ..env import AbstractEnv, EnvState
-from ..nn import ActorCritic
+from .envs import AbstractEnv, EnvState
+from .policies import ActorCritic
 
 
 class AbstractAlgorithm(eqx.Module):
