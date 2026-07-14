@@ -27,7 +27,7 @@ from mujoco import mjx
 from mujoco.mjx import Data, Model
 
 
-def load_model(path: Path) -> Model:
+def load_model(path: str) -> Model:
     """Load an `mjx.Model` from a configuration file.
 
     Parameters
