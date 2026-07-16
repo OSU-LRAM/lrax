@@ -18,7 +18,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-from typing import Callable
+from typing import Callable, Literal
 
 import equinox as eqx
 import jax
@@ -50,7 +50,7 @@ class SPD(eqx.Module):
 
     def __init__(
         self,
-        in_size: int,
+        in_size: int | Literal["scalar"],
         diag_size: int,
         width_size: int,
         depth: int,
@@ -126,8 +126,8 @@ class TamedMLP(eqx.Module):
 
     def __init__(
         self,
-        in_size: int,
-        out_size: int,
+        in_size: int | Literal["scalar"],
+        out_size: int | Literal["scalar"],
         width_size: int,
         depth: int,
         activation: Callable = _lipswish,
