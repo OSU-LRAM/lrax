@@ -3,7 +3,7 @@ name = "lrax"
 version = "0.1.0"
 description = "A collection of JAX modules used by LRAM for robotics learning."
 readme = "README.md"
-requires-python = ">=3.14"
+requires-python = ">=3.12"
 dependencies = [
     "equinox>=0.13.8",
     "jax[cuda]>=0.10.2",
