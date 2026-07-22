@@ -9,6 +9,7 @@ dependencies = [
     "jax[cuda]>=0.10.2",
     "jaxtyping>=0.3.11",
     "lightning>=2.6.5",
+    "matplotlib>=3.11.1",
     "optax>=0.2.8",
     "pyyaml>=6.0.3",
     "wandb>=0.19.0",
