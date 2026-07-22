@@ -31,11 +31,8 @@ from lightning.pytorch import LightningDataModule
 from tqdm import tqdm
 
 from .._custom_types import Metrics, Optimizer
-from .algorithm import AbstractAlgorithm
 from .callbacks import Callback, StopTraining
-from .envs import AbstractEnv
 from .logger import Logger
-from .policies import ActorCritic
 
 # takes either (model, batch, keys) or, when `filter_spec` is set, (diff_model,
 # static_model, batch, keys); returns ((loss, metrics), grads)
@@ -230,98 +227,6 @@ class ModelTrainer(BaseTrainer):
 
             # early stopping check
             if stop:
-                break
-
-        return model
-
-
-@dataclass
-class PolicyTrainer(BaseTrainer):
-    """Train a policy using the provided RL algorithm."""
-
-    def learn(
-        self,
-        key: PRNGKeyArray,
-        model: ActorCritic | eqx.Module,
-        env: AbstractEnv,
-        algorithm: AbstractAlgorithm,
-        optim: Optimizer,
-        *,
-        num_iterations: int,
-        checkpoint: Optional[Checkpoint] = None,
-        callbacks: Sequence[Callback] = (),
-    ) -> ActorCritic | eqx.Module:
-        """Train `model` against `env` using `algorithm`.
-
-        Parameters
-        ----------
-        - `key`: A `jax.random.key` used to provide randomness for the initial
-            environment reset and every training iteration.
-        - `model`: The `ActorCritic` model to train.
-        - `env`: The vectorized environment `algorithm` interacts with.
-        - `algorithm`: The training algorithm, e.g., `lrax.algorithms.PPO`. Drives all
-            interaction with `env` and all model updates; `PolicyTrainer` only calls
-            `algorithm.step` in a loop.
-        - `optim`: The optax optimizer used to update `model`.
-        - `num_iterations`: The number of times to call `algorithm.step`. (Keyword
-            only argument.)
-        - `checkpoint`: If set, configures periodic saving of the model to disk.
-            Defaults to `None`. (Keyword only argument.)
-        - `callbacks`: A sequence of `Callback`s run after every iteration, e.g., to
-            trigger early stopping. Defaults to `()`. (Keyword only argument.)
-
-        Returns
-        -------
-        The trained model.
-        """
-        reset_key, train_key = jr.split(key)
-        env_state = env.reset(reset_key)
-        opt_state = optim.init(eqx.filter(model, eqx.is_inexact_array))
-
-        @eqx.filter_jit
-        def _step(_algorithm, _model, _opt_state, _optim, _env, _env_state, _key):
-            return _algorithm.step(_model, _opt_state, _optim, _env, _env_state, _key)
-
-        if checkpoint is not None:
-            checkpoint.path.parent.mkdir(parents=True, exist_ok=True)
-
-        best_metric = None
-
-        print(f"Training {self.name}...")
-        for step in tqdm(range(num_iterations)):
-            step_key = jr.fold_in(train_key, step)
-            result = _step(algorithm, model, opt_state, optim, env, env_state, step_key)
-            model, opt_state, env_state, metrics = result
-            loss = metrics["loss"]
-
-            if self.logger is not None:
-                self.logger.log_metrics(metrics)
-
-            if checkpoint is not None:
-                monitored = (
-                    metrics[checkpoint.monitor]
-                    if checkpoint.monitor is not None
-                    else loss
-                )
-                match checkpoint.mode:
-                    case "latest":
-                        should_save = True
-                    case "min":
-                        should_save = best_metric is None or monitored < best_metric
-                    case "max":
-                        should_save = best_metric is None or monitored > best_metric
-                    case _:
-                        assert_never(checkpoint.mode)
-
-                if should_save:
-                    best_metric = monitored
-                    eqx.tree_serialise_leaves(checkpoint.path, model)
-
-            try:
-                for callback in callbacks:
-                    callback(loss, metrics, step)
-            except StopTraining as e:
-                print(f"Early stop at step {step}: {e}")
                 break
 
         return model

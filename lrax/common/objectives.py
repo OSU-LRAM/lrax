@@ -18,6 +18,12 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-from .env import AbstractEnv, EnvState
+import jax.numpy as jnp
+from jaxtyping import ArrayLike
 
-__all__ = ["AbstractEnv", "EnvState"]
+from .._custom_types import Axis
+
+
+def squared_norm(x: ArrayLike, axis: Axis = None) -> ArrayLike:
+    """Calculate the squared 2-norm of the provided array."""
+    return jnp.sum(x**2, axis=axis)
