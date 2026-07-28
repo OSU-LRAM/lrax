@@ -20,8 +20,9 @@
 
 import csv
 from abc import ABC, abstractmethod
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Optional, Sequence
+from typing import Any
 
 import jax.tree_util as jtu
 import wandb
@@ -47,7 +48,7 @@ class Logger(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def log_metrics(self, metrics: Metrics, step: Optional[int] = None) -> None:
+    def log_metrics(self, metrics: Metrics, step: int | None = None) -> None:
         """Record a set of metrics for a single training step.
 
         Parameters
@@ -84,7 +85,7 @@ class FileLogger(Logger):
         self,
         root_dir: str | Path = ".",
         name: str = "lrax",
-        version: Optional[int] = None,
+        version: int | None = None,
     ):
         """Create a new file logger.
 
@@ -105,8 +106,8 @@ class FileLogger(Logger):
 
         print(f"Writing logs to {self.log_dir}")
 
-        self._metrics_file = open(self.log_dir / "metrics.csv", "w", newline="")
-        self._metrics_writer: Optional[csv.DictWriter] = None
+        self._metrics_file = open(self.log_dir / "metrics.csv", "w", newline="")  # noqa: SIM115
+        self._metrics_writer: csv.DictWriter | None = None
         self._step = 0
 
     def log_hyperparams(self, params: dict[str, Any]) -> None:
@@ -115,7 +116,7 @@ class FileLogger(Logger):
             writer.writeheader()
             writer.writerow(params)
 
-    def log_metrics(self, metrics: Metrics, step: Optional[int] = None) -> None:
+    def log_metrics(self, metrics: Metrics, step: int | None = None) -> None:
         row = {"step": self._step if step is None else step, **metrics}
 
         # the metric names logged on the first call fix the CSV's columns for the rest
@@ -150,7 +151,7 @@ class MultiLogger(Logger):
     def log_hyperparams(self, params: dict[str, Any]) -> None:
         jtu.tree_map(lambda logger: logger.log_hyperparams(params), self.loggers)
 
-    def log_metrics(self, metrics: Metrics, step: Optional[int] = None) -> None:
+    def log_metrics(self, metrics: Metrics, step: int | None = None) -> None:
         jtu.tree_map(lambda logger: logger.log_metrics(metrics, step), self.loggers)
 
     def cleanup(self) -> None:
@@ -160,12 +161,7 @@ class MultiLogger(Logger):
 class WandbLogger(Logger):
     """Logs hyperparameters and metrics to a Weights & Biases run."""
 
-    def __init__(
-        self,
-        project: str,
-        name: Optional[str] = None,
-        **kwargs: Any,
-    ):
+    def __init__(self, project: str, name: str | None = None, **kwargs: Any):
         """Create a new Weights & Biases logger.
 
         Parameters
@@ -180,7 +176,7 @@ class WandbLogger(Logger):
     def log_hyperparams(self, params: dict[str, Any]) -> None:
         self._run.config.update(params)
 
-    def log_metrics(self, metrics: Metrics, step: Optional[int] = None) -> None:
+    def log_metrics(self, metrics: Metrics, step: int | None = None) -> None:
         self._run.log(metrics, step=step)
 
     def cleanup(self) -> None:

@@ -18,9 +18,10 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Literal, Optional, Sequence, assert_never
+from typing import Any, Literal, assert_never
 
 import equinox as eqx
 import jax.numpy as jnp
@@ -47,7 +48,7 @@ class Checkpoint:
     """Parameters used to checkpoint a model."""
 
     path: Path
-    monitor: Optional[str] = None
+    monitor: str | None = None
     mode: Literal["min", "max", "latest"] = "latest"
 
 
@@ -56,7 +57,7 @@ class BaseTrainer:
     """Base class for trainers."""
 
     name: str
-    logger: Optional[Logger] = None
+    logger: Logger | None = None
 
     def log_hyperparams(self, params: dict[str, Any]):
         """Log a set of hyperparameters to the configured logger.
@@ -87,8 +88,8 @@ class ModelTrainer(BaseTrainer):
         optim: Optimizer,
         *,
         epochs: int = 25,
-        checkpoint: Optional[Checkpoint] = None,
-        filter_spec: Optional[PyTree[bool]] = None,
+        checkpoint: Checkpoint | None = None,
+        filter_spec: PyTree[bool] | None = None,
         callbacks: Sequence[Callback] = (),
         is_multi_transform: bool = False,
     ):
@@ -248,7 +249,7 @@ class PolicyTrainer(BaseTrainer):
         optim: Optimizer,
         *,
         num_iterations: int,
-        checkpoint: Optional[Checkpoint] = None,
+        checkpoint: Checkpoint | None = None,
         callbacks: Sequence[Callback] = (),
     ) -> ActorCritic | eqx.Module:
         """Train `model` against `env` using `algorithm`.

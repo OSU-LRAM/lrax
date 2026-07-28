@@ -19,9 +19,9 @@
 # THE SOFTWARE.
 
 import subprocess
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional, Sequence
 
 
 @dataclass
@@ -47,8 +47,8 @@ class Cluster:
     work_dir: str
     default_resources: Resources
     modules: Sequence[str] = field(default_factory=tuple)
-    venv: Optional[str] = None
-    mail_user: Optional[str] = None
+    venv: str | None = None
+    mail_user: str | None = None
     mail_type: str = "BEGIN,END,FAIL"
 
 
@@ -64,7 +64,7 @@ class Job:
 
     name: str
     command: Sequence[str]
-    resources: Optional[Resources] = None
+    resources: Resources | None = None
 
 
 def make_sbatch_script(
@@ -136,7 +136,9 @@ def submit_slurm_job(
         return
 
     print(f"Submitting: {job.name}")
-    result = subprocess.run(["sbatch"], input=script, text=True, capture_output=True)
+    result = subprocess.run(
+        ["sbatch"], input=script, text=True, capture_output=True, check=False
+    )
 
     if result.returncode == 0:
         print(f"  -> Submitted: {result.stdout.strip()}")

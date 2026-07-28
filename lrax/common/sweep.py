@@ -19,7 +19,7 @@
 # THE SOFTWARE.
 
 from dataclasses import dataclass
-from typing import Any, Literal, Optional
+from typing import Any, Literal
 
 import wandb
 
@@ -37,8 +37,8 @@ class SweepConfig:
     metric_name: str
     parameters: dict[str, dict[str, Any]]
     metric_goal: Literal["minimize", "maximize"] = "minimize"
-    name: Optional[str] = None
-    program: Optional[str] = None
+    name: str | None = None
+    program: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Render this configuration as the dictionary `wandb.sweep` expects."""
@@ -54,9 +54,7 @@ class SweepConfig:
         return config
 
 
-def register_sweep(
-    config: SweepConfig, project: str, entity: Optional[str] = None
-) -> str:
+def register_sweep(config: SweepConfig, project: str, entity: str | None = None) -> str:
     """Register a sweep with Weights & Biases.
 
     Parameters
@@ -75,9 +73,9 @@ def register_sweep(
 
 def agent_command(
     sweep_id: str,
-    project: Optional[str] = None,
-    entity: Optional[str] = None,
-    count: Optional[int] = None,
+    project: str | None = None,
+    entity: str | None = None,
+    count: int | None = None,
 ) -> list[str]:
     """Build the `wandb agent` command that runs trials for a registered sweep.
 

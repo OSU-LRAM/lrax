@@ -18,6 +18,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
+from ._epsilon import EPSILON
 from .ppo import PPO
 
-__all__ = ["PPO"]
+__all__ = ["EPSILON", "PPO"]

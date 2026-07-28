@@ -18,6 +18,22 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-from ..common.policies import Actor, ActorCritic, Critic
+from glob import glob
 
-__all__ = ["Actor", "ActorCritic", "Critic"]
+import matplotlib.font_manager
+
+
+def load_msttcorefonts(font_dir: str = "/usr/share/fonts/truetype/msttcorefonts/"):
+    """Load the Microsoft fonts to matplotlib.
+
+    The Microsoft fonts can be used in your matplotlib figures after calling this
+    function. For example,
+    ```python
+    >>> load_msttcorefonts()
+    >>> plt.rcParams["font.family"] = "sans-serif"
+    >>> plt.rcParams["font.sans-serif"] = "Times New Roman"
+    >>> plt.rcParams["pdf.fonttype"] = 42
+    ```
+    """
+    for font in glob(font_dir + "*.ttf"):
+        matplotlib.font_manager.fontManager.addfont(font)

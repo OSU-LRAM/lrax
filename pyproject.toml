@@ -9,11 +9,13 @@ dependencies = [
     "jax[cuda]>=0.10.2",
     "jaxtyping>=0.3.11",
     "lightning>=2.6.5",
-    "mujoco-mjx>=3.10.0",
     "optax>=0.2.8",
     "pyyaml>=6.0.3",
     "wandb>=0.19.0",
 ]
+
+[project.optional-dependencies]
+mjx = ["mujoco-mjx>=3.10.0"]
 
 [tool.ruff.lint]
 ignore = ["F722", "F821", "E731", "F811"]

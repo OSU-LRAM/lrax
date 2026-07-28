@@ -18,7 +18,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-from typing import Optional, cast
+from typing import cast
 
 import equinox as eqx
 import jax
@@ -153,11 +153,11 @@ class PPO(AbstractAlgorithm):
     gamma: float = 0.99
     gae_lambda: float = 0.95
     clip_ratio: float = 0.2
-    value_clip_ratio: Optional[float] = 0.2
+    value_clip_ratio: float | None = 0.2
     entropy_coef: float = 0.01
     value_coef: float = 1.0
     normalize_advantages: bool = False
-    desired_kl: Optional[float] = None
+    desired_kl: float | None = None
     lr_scale_factor: float = 1.5
     min_lr: float = 1e-5
     max_lr: float = 1e-2
@@ -190,7 +190,7 @@ class PPO(AbstractAlgorithm):
 
         def _step(state: EnvState, step_key: PRNGKeyArray) -> tuple[EnvState, Rollout]:
             env_keys = jr.split(step_key, env.num_envs)
-            sample_fn = lambda o, k: model.actor.sample(o, key=k)  # noqa
+            sample_fn = lambda o, k: model.actor.sample(o, key=k)
             actions, log_probs = jax.vmap(sample_fn)(state.obs, env_keys)
             values = jax.vmap(model.critic)(state.obs)
             next_state = env.step(state, actions)

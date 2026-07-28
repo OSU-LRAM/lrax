@@ -18,7 +18,8 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-from typing import Callable, Literal
+from collections.abc import Callable
+from typing import Literal
 
 import equinox as eqx
 import jax

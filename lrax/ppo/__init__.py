@@ -21,4 +21,4 @@
 from .policies import Actor, ActorCritic, Critic
 from .ppo import PPO
 
-__all__ = ["Actor", "Critic", "ActorCritic", "PPO"]
+__all__ = ["PPO", "Actor", "ActorCritic", "Critic"]
