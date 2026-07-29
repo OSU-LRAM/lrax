@@ -18,7 +18,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 
 import equinox as eqx
 import jax.nn as jnn
@@ -204,3 +204,92 @@ class ActorCritic(eqx.Module):
 
     actor: Actor
     critic: Critic
+
+
+class ContinuousCritic(eqx.Module):
+    """Critic network(s) used for SAC
+
+    This is inspired by the `stable_baselines3` implementation linked below:
+    https://github.com/DLR-RM/stable-baselines3/blob/master/stable_baselines3/common/policies.py#L912
+    """
+
+    num_critics: int = eqx.field(static=True)
+    q_networks: Sequence[eqx.nn.MLP]
+
+    def __init__(
+        self,
+        obs_size: int,
+        act_size: int,
+        width_size: int,
+        depth: int,
+        activation: Callable = _elu,
+        final_activation: Callable = _identity,
+        num_critics: int = 2,
+        *,
+        key: PRNGKeyArray,
+    ):
+        """Initialize a "continuous" critic network.
+
+        Parameters
+        ----------
+        - `obs_size`: The size of the observation vector.
+        - `act_size`: The size of the action vector.
+        - `width_size`: The size of each hidden layer.
+        - `depth`: The number of hidden layers, including the output layer.
+        - `activation`: The activation function after each hidden layer. Defaults to
+            `jax.nn.elu`.
+        - `final_activation`: The activation function after the output layer. Defaults
+            to the identity.
+        - `num_critics`: The number of critic networks to create.
+        - `key`: A `jax.random.key` used to provide randomness for parameter
+            initialisation. (Keyword only argument.)
+        """
+        self.num_critics = num_critics
+
+        q_networks = []
+        for q in range(num_critics):
+            subkey = jr.fold_in(key, q)
+            mlp = eqx.nn.MLP(
+                obs_size + act_size,
+                "scalar",
+                width_size,
+                depth,
+                activation,
+                final_activation,
+                key=subkey,
+            )
+            q_networks.append(mlp)
+
+        self.q_networks = q_networks
+
+    def __call__(self, obs: Array, actions: Array) -> tuple[Array, ...]:
+        """Forward pass of the critic network(s).
+
+        Parameters
+        ----------
+        - `obs`: A JAX array with shape `(obs_size,)`.
+        - `actions`: A JAX array with shape `(act_size,)`.
+
+        Returns
+        -------
+        A tuple of JAX arrays, representing estimates from the action-state value
+        functions.
+        """
+        qvalue_input = jnp.concatenate([obs, actions], axis=-1)
+        return tuple(q_net(qvalue_input) for q_net in self.q_networks)
+
+    def q1(self, obs: Array, actions: Array) -> Array:
+        """Forward pass of the *first* critic network.
+
+        This is useful when you don't need estimates from all networks.
+
+        Parameters
+        ----------
+        - `obs`: A JAX array with shape `(obs_size,)`.
+        - `actions`: A JAX array with shape `(act_size,)`.
+
+        Returns
+        -------
+        A JAX array representing the estimated value from first network in `q_networks`.
+        """
+        return self.q_networks[0](jnp.concatenate([obs, actions], axis=-1))

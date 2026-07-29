@@ -28,6 +28,7 @@ def load_msttcorefonts(font_dir: str = "/usr/share/fonts/truetype/msttcorefonts/
 
     The Microsoft fonts can be used in your matplotlib figures after calling this
     function. For example,
+
     ```python
     >>> load_msttcorefonts()
     >>> plt.rcParams["font.family"] = "sans-serif"

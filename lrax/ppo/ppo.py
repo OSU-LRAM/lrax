@@ -35,6 +35,8 @@ from ..common.algorithm import AbstractAlgorithm
 from ..common.envs import AbstractEnv, EnvState
 from ..common.policies import ActorCritic
 
+type _AlgState = None
+
 
 class Rollout(eqx.Module):
     """Container representing the transition state."""
@@ -134,7 +136,7 @@ def _adapt_lr(
     )
 
 
-class PPO(AbstractAlgorithm):
+class PPO(AbstractAlgorithm[_AlgState]):
     """Proximal Policy Optimization.
 
     "Proximal Policy Optimization Algorithms", John Schulman, Filip Wolski, Prafulla
@@ -361,15 +363,26 @@ class PPO(AbstractAlgorithm):
         model = eqx.combine(params, static)
         return model, opt_state, metrics
 
+    def init(
+        self,
+        model: ActorCritic,
+        env: AbstractEnv,
+        *,
+        key: PRNGKeyArray,
+    ) -> _AlgState:
+        del model, env, key
+        return None
+
     def step(
         self,
         model: ActorCritic,
+        alg_state: _AlgState,
         opt_state: OptState,
         optim: Optimizer,
         env: AbstractEnv,
         env_state: EnvState,
         key: PRNGKeyArray,
-    ) -> tuple[ActorCritic, OptState, EnvState, Metrics]:
+    ) -> tuple[ActorCritic, _AlgState, OptState, EnvState, Metrics]:
         """Run one PPO iteration: rollout, GAE, then a clipped-surrogate update.
 
         See `AbstractAlgorithm.step` for the parameter and return descriptions.
@@ -414,4 +427,4 @@ class PPO(AbstractAlgorithm):
         metrics["mean_reward"] = jnp.mean(rollouts.rewards)
         metrics["done_rate"] = jnp.mean(rollouts.dones)
 
-        return model, opt_state, env_state, metrics
+        return model, alg_state, opt_state, env_state, metrics

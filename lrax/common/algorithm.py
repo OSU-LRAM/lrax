@@ -21,32 +21,58 @@
 import abc
 
 import equinox as eqx
-from jaxtyping import PRNGKeyArray
+from jaxtyping import PRNGKeyArray, PyTree
 from optax import OptState
 
 from .._custom_types import Metrics, Optimizer
 from .envs import AbstractEnv, EnvState
-from .policies import ActorCritic
 
 
-class AbstractAlgorithm(eqx.Module):
-    """Abstract base class for an on-policy actor-critic training algorithm."""
+class AbstractAlgorithm[AlgState: PyTree](eqx.Module):
+    """Abstract base class for an actor-critic training algorithm."""
+
+    @abc.abstractmethod
+    def init(
+        self,
+        model: PyTree,
+        env: AbstractEnv,
+        *,
+        key: PRNGKeyArray,
+    ) -> AlgState:
+        """Build the initial algorithm state.
+
+        Parameters
+        ----------
+        - `model`: The initial model, as passed to `PolicyTrainer.learn`.
+        - `env`: The (vectorized) environment `step` will interact with.
+        - `key`: A `jax.random.key` used to provide randomness for initialisation.
+            (Keyword only argument.)
+
+        Returns
+        -------
+        The initial algorithm state, which should be used the first time `step` is
+        called.
+        """
+        raise NotImplementedError
 
     @abc.abstractmethod
     def step(
         self,
-        model: ActorCritic,
+        model: PyTree,
+        alg_state: AlgState,
         opt_state: OptState,
         optim: Optimizer,
         env: AbstractEnv,
         env_state: EnvState,
         key: PRNGKeyArray,
-    ) -> tuple[ActorCritic, OptState, EnvState, Metrics]:
+    ) -> tuple[PyTree, AlgState, OptState, EnvState, Metrics]:
         """Run one training iteration.
 
         Parameters
         ----------
-        - `model`: The current `ActorCritic` model.
+        - `model`: The current model.
+        - `alg_state`: The current algorithm state, as returned by `init` or by the
+            previous call to `step`.
         - `opt_state`: The optimizer state for `model`.
         - `optim`: The optax optimizer used to update `model`.
         - `env`: The (vectorized) environment to interact with.
@@ -55,7 +81,8 @@ class AbstractAlgorithm(eqx.Module):
 
         Returns
         -------
-        The updated model and optimizer state, the environment state to resume from on
-        the next call, and a dictionary of scalar metrics for this iteration.
+        The updated model, algorithm state, and optimizer state, the environment state
+        to resume from on the next call, and a dictionary of scalar metrics for this
+        iteration.
         """
         raise NotImplementedError

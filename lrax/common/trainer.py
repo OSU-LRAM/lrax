@@ -262,7 +262,8 @@ class PolicyTrainer(BaseTrainer):
         - `env`: The vectorized environment `algorithm` interacts with.
         - `algorithm`: The training algorithm, e.g., `lrax.algorithms.PPO`. Drives all
             interaction with `env` and all model updates; `PolicyTrainer` only calls
-            `algorithm.step` in a loop.
+            `algorithm.init` once, then `algorithm.step` in a loop, threading the
+            algorithm state `init` returns through every `step` call.
         - `optim`: The optax optimizer used to update `model`.
         - `num_iterations`: The number of times to call `algorithm.step`. (Keyword
             only argument.)
@@ -275,13 +276,18 @@ class PolicyTrainer(BaseTrainer):
         -------
         The trained model.
         """
-        reset_key, train_key = jr.split(key)
+        reset_key, init_key, train_key = jr.split(key, 3)
         env_state = env.reset(reset_key)
         opt_state = optim.init(eqx.filter(model, eqx.is_inexact_array))
+        algorithm_state = algorithm.init(model, env, key=init_key)
 
         @eqx.filter_jit
-        def _step(_algorithm, _model, _opt_state, _optim, _env, _env_state, _key):
-            return _algorithm.step(_model, _opt_state, _optim, _env, _env_state, _key)
+        def _step(
+            _algorithm, _model, _state, _opt_state, _optim, _env, _env_state, _key
+        ):
+            return _algorithm.step(
+                _model, _state, _opt_state, _optim, _env, _env_state, _key
+            )
 
         if checkpoint is not None:
             checkpoint.path.parent.mkdir(parents=True, exist_ok=True)
@@ -291,8 +297,17 @@ class PolicyTrainer(BaseTrainer):
         print(f"Training {self.name}...")
         for step in tqdm(range(num_iterations)):
             step_key = jr.fold_in(train_key, step)
-            result = _step(algorithm, model, opt_state, optim, env, env_state, step_key)
-            model, opt_state, env_state, metrics = result
+            result = _step(
+                algorithm,
+                model,
+                algorithm_state,
+                opt_state,
+                optim,
+                env,
+                env_state,
+                step_key,
+            )
+            model, algorithm_state, opt_state, env_state, metrics = result
             loss = metrics["loss"]
 
             if self.logger is not None:
