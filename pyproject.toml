@@ -6,7 +6,8 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "equinox>=0.13.8",
-    "jax[cuda]>=0.10.2",
+    "jax[cuda]>=0.10.2; sys_platform != 'darwin'",
+    "jax>=0.10.2; sys_platform == 'darwin'",
     "jaxtyping>=0.3.11",
     "lightning>=2.6.5",
     "matplotlib>=3.11.1",
