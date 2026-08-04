@@ -27,8 +27,10 @@ from optax import OptState
 from .._custom_types import Metrics, Optimizer
 from .envs import AbstractEnv, EnvState
 
+type _AlgState = PyTree
 
-class AbstractAlgorithm[AlgState: PyTree](eqx.Module):
+
+class AbstractAlgorithm(eqx.Module):
     """Abstract base class for an actor-critic training algorithm."""
 
     @abc.abstractmethod
@@ -38,7 +40,7 @@ class AbstractAlgorithm[AlgState: PyTree](eqx.Module):
         env: AbstractEnv,
         *,
         key: PRNGKeyArray,
-    ) -> AlgState:
+    ) -> _AlgState:
         """Build the initial algorithm state.
 
         Parameters
@@ -59,13 +61,13 @@ class AbstractAlgorithm[AlgState: PyTree](eqx.Module):
     def step(
         self,
         model: PyTree,
-        alg_state: AlgState,
+        alg_state: _AlgState,
         opt_state: OptState,
         optim: Optimizer,
         env: AbstractEnv,
         env_state: EnvState,
         key: PRNGKeyArray,
-    ) -> tuple[PyTree, AlgState, OptState, EnvState, Metrics]:
+    ) -> tuple[PyTree, _AlgState, OptState, EnvState, Metrics]:
         """Run one training iteration.
 
         Parameters

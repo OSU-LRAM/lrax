@@ -136,7 +136,7 @@ def _adapt_lr(
     )
 
 
-class PPO(AbstractAlgorithm[_AlgState]):
+class PPO(AbstractAlgorithm):
     """Proximal Policy Optimization.
 
     "Proximal Policy Optimization Algorithms", John Schulman, Filip Wolski, Prafulla

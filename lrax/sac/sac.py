@@ -50,7 +50,7 @@ class Rollout(eqx.Module):
     metrics: Metrics
 
 
-class SAC(AbstractAlgorithm[_AlgState]):
+class SAC(AbstractAlgorithm):
     """Soft Actor-Critic.
 
     "Soft Actor-Critic: Off-Policy Maximum Entropy Deep Reinforcement Learning with a
