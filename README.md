@@ -1,20 +1,18 @@
 # lrax
 
-lrax is a collection of JAX modules used by LRAM for robotics learning. The
-main features of lrax include:
+lrax is a JAX library for robotics learning research. It provides JIT-compiled,
+building blocks and training infrastructure for fast training pipelines and
+hardware deployment.
 
-- `PPO` and `SAC`, JIT-compiled actor-critic reinforcement learning algorithms
-  built on JAX and Equinox
-- `Actor`, `Critic`, `ActorCritic`, and `ContinuousCritic`, reusable policy and
-  value network building blocks
-- `PolicyTrainer` and `ModelTrainer`, training loops for RL and supervised
-  learning respectively
-- `AbstractEnv`, a vectorized environment interface, with an optional MJX
-  backend for MuJoCo-based environments
+## Main Features
+
+- Standard robotics learning algorithms, such as `PPO` and `SAC`
+- Vectorized environments for GPU-accelerated training
+- Training interfaces for RL and supervised learning with built-in logging support
 
 ## Installation
 
-lrax can be installed using pip or uv,
+lrax requires Python 3.12+, and can be installed using pip or uv
 
 ```bash
 # pip installation
@@ -27,7 +25,7 @@ uv pip install git+https://github.com/OSU-LRAM/lrax.git
 uv add git+ssh://git@github.com/OSU-LRAM/lrax.git
 ```
 
-MuJoCo-based environments require the optional `mjx` extra,
+To install the MuJoCo helpers, include the optional `mjx` dependencies
 
 ```bash
 uv add "lrax[mjx] @ git+ssh://git@github.com/OSU-LRAM/lrax.git"
@@ -47,6 +45,7 @@ from lrax import PPO
 from lrax.common.envs import AbstractEnv, EnvState
 from lrax.common.policies import Actor, ActorCritic, Critic
 from lrax.common.trainer import PolicyTrainer
+
 
 class PointMassEnv(AbstractEnv):
     """A minimal environment: drive a 1D point mass to the origin."""
@@ -72,22 +71,42 @@ class PointMassEnv(AbstractEnv):
         obs = jnp.stack([pos, vel], axis=-1)
         reward = -(pos**2)
         return EnvState(
-            pipeline_state=None, obs=obs, reward=reward,
-            done=jnp.zeros(self.num_envs, dtype=bool), aux={},
+            pipeline_state=None,
+            obs=obs,
+            reward=reward,
+            done=jnp.zeros(self.num_envs, dtype=bool),
+            aux={}, # include auxilliary data from the environment
         )
 
 key = jr.key(0)
 actor_key, critic_key, train_key = jr.split(key, 3)
 env = PointMassEnv()
 
-model = ActorCritic(
-    actor=Actor(env.obs_size, env.act_size, width_size=32, depth=2, key=actor_key),
-    critic=Critic(env.obs_size, width_size=32, depth=2, key=critic_key),
-)
+actor = Actor(env.obs_size, env.act_size, width_size=32, depth=2, key=actor_key)
+critic = Critic(env.obs_size, width_size=32, depth=2, key=critic_key)
 
+# uses the `PolicyTrainer` to train a policy using the custom environment
 trained_model = PolicyTrainer(name="ppo").learn(
-    train_key, model, env, PPO(), optax.adam(3e-4), num_iterations=100,
+    train_key,
+    ActorCritic(actor, critic),
+    env,
+    PPO(),
+    optax.adam(3e-4),
+    num_iterations=100,
 )
+```
+
+## Citation
+
+If you use lrax in your research, please cite the project:
+
+```bibtex
+@misc{lrax2026github,
+  author  = {Palmer, Evan F. and Hatton, Ross L.},
+  title   = {{LRAX}: A {JAX} library for robotics learning research},
+  url     = {http://github.com/OSU-LRAM/lrax},
+  year    = {2026},
+}
 ```
 
 ## License

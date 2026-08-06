@@ -5,7 +5,7 @@ build-backend = "flit_core.buildapi"
 [project]
 name = "lrax"
 version = "0.1.0"
-description = "A collection of JAX modules used by LRAM for robotics learning."
+description = "JAX library for robotics learning research"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
