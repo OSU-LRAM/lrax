@@ -1,8 +1,8 @@
 # lrax
 
-lrax is a JAX library for robotics learning research. It provides JIT-compiled,
+lrax is a JAX library for robotics learning research. It provides JIT-compiled
 building blocks and training infrastructure for fast training pipelines and
-hardware deployment.
+realtime hardware deployment.
 
 ## Main Features
 
