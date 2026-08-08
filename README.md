@@ -103,7 +103,7 @@ If you use lrax in your research, please cite the project:
 ```bibtex
 @misc{lrax2026github,
   author  = {Palmer, Evan F. and Hatton, Ross L.},
-  title   = {{lrax}: A {JAX} library for robotics learning research},
+  title   = {lrax: A {JAX} library for robotics learning research},
   url     = {http://github.com/OSU-LRAM/lrax},
   year    = {2026},
 }
