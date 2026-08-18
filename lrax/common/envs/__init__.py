@@ -18,6 +18,6 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-from .env import AbstractEnv, EnvState
+from .env import AbstractEnv, DiffEnvState, EnvState
 
-__all__ = ["AbstractEnv", "EnvState"]
+__all__ = ["AbstractEnv", "DiffEnvState", "EnvState"]

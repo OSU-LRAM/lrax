@@ -37,6 +37,16 @@ class EnvState(eqx.Module):
     aux: Metrics
 
 
+class DiffEnvState(EnvState):
+    """The `EnvState` for a differentiable simulator (e.g., MJX)."""
+
+    terminated: Array
+    terminal_obs: Array
+
+
+type _EnvState = EnvState | DiffEnvState
+
+
 class AbstractEnv(eqx.Module):
     """Abstract base class for a simulation environment."""
 
@@ -45,7 +55,7 @@ class AbstractEnv(eqx.Module):
     num_envs: eqx.AbstractVar[int]
 
     @abc.abstractmethod
-    def reset(self, key: PRNGKeyArray) -> EnvState:
+    def reset(self, key: PRNGKeyArray) -> _EnvState:
         """Reset all `num_envs` environments to an initial state.
 
         Parameters
@@ -54,12 +64,12 @@ class AbstractEnv(eqx.Module):
 
         Returns
         -------
-        The initial `EnvState`.
+        The initial environment state.
         """
         raise NotImplementedError
 
     @abc.abstractmethod
-    def step(self, state: EnvState, action: Array) -> EnvState:
+    def step(self, state: _EnvState, action: Array) -> _EnvState:
         """Advance all `num_envs` environments by one step.
 
         Parameters
@@ -69,7 +79,7 @@ class AbstractEnv(eqx.Module):
 
         Returns
         -------
-        The next `EnvState`. Any environment whose episode ends this step should be
-        auto-reset, with `done` reporting the pre-reset termination/truncation flag.
+        The next environment state. Any environment whose episode ends this step should
+        be auto-reset, with `done` reporting the pre-reset termination/truncation flag.
         """
         raise NotImplementedError

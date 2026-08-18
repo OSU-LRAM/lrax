@@ -27,6 +27,7 @@ import equinox as eqx
 import jax.numpy as jnp
 import jax.random as jr
 import jax.tree_util as jtu
+import optax
 from jaxtyping import PRNGKeyArray, PyTree, ScalarLike
 from lightning.pytorch import LightningDataModule
 from tqdm import tqdm
@@ -246,7 +247,7 @@ class PolicyTrainer(BaseTrainer):
         model: ActorCritic | eqx.Module,
         env: AbstractEnv,
         algorithm: AbstractAlgorithm,
-        optim: Optimizer,
+        optim: Optimizer | PyTree[Optimizer],
         *,
         num_iterations: int,
         checkpoint: Checkpoint | None = None,
@@ -264,7 +265,13 @@ class PolicyTrainer(BaseTrainer):
             interaction with `env` and all model updates; `PolicyTrainer` only calls
             `algorithm.init` once, then `algorithm.step` in a loop, threading the
             algorithm state `init` returns through every `step` call.
-        - `optim`: The optax optimizer used to update `model`.
+        - `optim`: The optax optimizer(s) used to update `model`. Most algorithms (e.g.
+            `PPO`, `SAC`) take a single optimizer applied to every inexact array leaf of
+            `model`. Algorithms that optimize distinct parts of the model separately
+            (e.g. `SHAC`) instead take a matching PyTree of optimizers, e.g.
+            `{"actor": optax.adam(2e-3), "critic": optax.adam(2e-3)}`; each optimizer is
+            initialized against the *whole* `model`, and it is `algorithm.step`'s
+            responsibility to only ever produce updates for the leaves it owns.
         - `num_iterations`: The number of times to call `algorithm.step`. (Keyword
             only argument.)
         - `checkpoint`: If set, configures periodic saving of the model to disk.
@@ -278,7 +285,15 @@ class PolicyTrainer(BaseTrainer):
         """
         reset_key, init_key, train_key = jr.split(key, 3)
         env_state = env.reset(reset_key)
-        opt_state = optim.init(eqx.filter(model, eqx.is_inexact_array))
+
+        # `optim` may be a single optimizer or a PyTree of them (e.g. separate actor and
+        # critic optimizers). Each optimizer leaf is initialized against every inexact
+        # array leaf of `model`; algorithms with more than one optimizer are responsible
+        # for only ever emitting updates for the leaves they own
+        is_optim = lambda x: isinstance(x, optax.GradientTransformation)
+        params = eqx.filter(model, eqx.is_inexact_array)
+        opt_state = jtu.tree_map(lambda o: o.init(params), optim, is_leaf=is_optim)
+
         algorithm_state = algorithm.init(model, env, key=init_key)
 
         @eqx.filter_jit

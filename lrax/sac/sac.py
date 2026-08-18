@@ -235,12 +235,6 @@ class SAC(AbstractAlgorithm):
         scalar metrics averaged over every gradient step. The target critic is
         Polyak-averaged towards the (online) critic after every gradient step.
         """
-        # `lax.scan`'s carry must be plain arrays, so `model`/`state` (which also carry
-        # non-array statics, e.g. activation functions) are partitioned once here and
-        # recombined inside the scan body. `state` is partitioned with `eqx.is_array`,
-        # not `eqx.is_inexact_array`: `ReplayBuffer.ptr`/`size` are integer arrays, and
-        # using the narrower (floating-point only) predicate would silently strand
-        # them in the "static", closed-over half instead of the scan carry
         model_params, model_static = eqx.partition(model, eqx.is_inexact_array)
         state_params, state_static = eqx.partition(alg_state, eqx.is_array)
         loss_and_grad = eqx.filter_value_and_grad(self._loss, has_aux=True)
@@ -298,7 +292,7 @@ class SAC(AbstractAlgorithm):
         env_state: EnvState,
         key: PRNGKeyArray,
     ) -> tuple[ActorCritic, _AlgState, OptState, EnvState, Metrics]:
-        """Run one SAC iteration: rollout into the replay buffer, then off-policy updates.
+        """Run one SAC iteration.
 
         See `AbstractAlgorithm.step` for the parameter and return descriptions.
         """
