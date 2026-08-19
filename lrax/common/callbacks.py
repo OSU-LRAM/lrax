@@ -18,7 +18,8 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-from abc import ABC, abstractmethod
+import abc
+from typing import override
 
 import jax.numpy as jnp
 from jaxtyping import ScalarLike
@@ -30,14 +31,14 @@ class StopTraining(Exception):
     """Raised by a callback to end training."""
 
 
-class Callback(ABC):
+class Callback(abc.ABC):
     """Base class for a callback invoked after every training step.
 
     Subclasses implement `__call__`, inspecting the step's loss and metrics to decide
     whether to act, e.g., raising `StopTraining` to end training.
     """
 
-    @abstractmethod
+    @abc.abstractmethod
     def __call__(self, loss: ScalarLike, metrics: Metrics, step: ScalarLike):
         """Run the callback for a single training step.
 
@@ -53,6 +54,7 @@ class Callback(ABC):
 class StopOnNaN(Callback):
     """Stops training as soon as a NaN loss value is encountered."""
 
+    @override
     def __call__(self, loss: ScalarLike, metrics: Metrics, step: ScalarLike):
         """Check the step's loss for a NaN value.
 

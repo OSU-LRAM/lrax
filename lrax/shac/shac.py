@@ -18,7 +18,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-from typing import Literal, cast
+from typing import Literal, cast, override
 
 import equinox as eqx
 import jax
@@ -57,8 +57,7 @@ class CriticBatch(eqx.Module):
 
 
 class _StepOutput(eqx.Module):
-    """Everything one short-horizon rollout step needs to report, stacked by `lax.scan`
-    into the `(num_steps, ...)` arrays used after the rollout."""
+    """Output of an short-horizon rollout step."""
 
     obs: Array
     raw_obs: Array
@@ -152,6 +151,7 @@ class SHAC(AbstractAlgorithm):
     normalize_returns: bool = False
     squash_actions: bool = False
 
+    @override
     def init(
         self,
         model: ActorCritic,
@@ -416,6 +416,7 @@ class SHAC(AbstractAlgorithm):
         model = eqx.combine(params, static)
         return model, opt_state, metrics
 
+    @override
     def step(
         self,
         model: ActorCritic,

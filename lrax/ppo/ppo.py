@@ -18,7 +18,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-from typing import cast
+from typing import cast, override
 
 import equinox as eqx
 import jax
@@ -363,6 +363,7 @@ class PPO(AbstractAlgorithm):
         model = eqx.combine(params, static)
         return model, opt_state, metrics
 
+    @override
     def init(
         self,
         model: ActorCritic,
@@ -373,6 +374,7 @@ class PPO(AbstractAlgorithm):
         del model, env, key
         return None
 
+    @override
     def step(
         self,
         model: ActorCritic,

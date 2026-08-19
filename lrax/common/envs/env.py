@@ -19,10 +19,9 @@
 # THE SOFTWARE.
 
 import abc
-from typing import Any
 
 import equinox as eqx
-from jaxtyping import Array, PRNGKeyArray
+from jaxtyping import Array, PRNGKeyArray, PyTree
 
 from ..._custom_types import Metrics
 
@@ -30,7 +29,7 @@ from ..._custom_types import Metrics
 class EnvState(eqx.Module):
     """The state of a vectorized environment."""
 
-    pipeline_state: Any
+    pipeline_state: PyTree
     obs: Array
     reward: Array
     done: Array
@@ -47,7 +46,7 @@ class DiffEnvState(EnvState):
 type _EnvState = EnvState | DiffEnvState
 
 
-class AbstractEnv(eqx.Module):
+class AbstractEnv(eqx.Module, abc.ABC):
     """Abstract base class for a simulation environment."""
 
     obs_size: eqx.AbstractVar[int]

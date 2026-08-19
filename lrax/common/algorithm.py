@@ -30,7 +30,7 @@ from .envs import AbstractEnv, EnvState
 type _AlgState = PyTree
 
 
-class AbstractAlgorithm(eqx.Module):
+class AbstractAlgorithm(eqx.Module, abc.ABC):
     """Abstract base class for an actor-critic training algorithm."""
 
     @abc.abstractmethod

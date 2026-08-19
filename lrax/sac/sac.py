@@ -18,7 +18,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-from typing import Literal, cast
+from typing import Literal, cast, override
 
 import equinox as eqx
 import jax
@@ -67,6 +67,7 @@ class SAC(AbstractAlgorithm):
     entropy_coef: float | Literal["auto"] = "auto"
     target_entropy: float | None = None
 
+    @override
     def init(
         self,
         model: ActorCritic,
@@ -282,6 +283,7 @@ class SAC(AbstractAlgorithm):
         alg_state = eqx.combine(state_params, state_static)
         return model, alg_state, opt_state, metrics
 
+    @override
     def step(
         self,
         model: ActorCritic,
