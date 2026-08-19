@@ -47,6 +47,7 @@ class Rollout(eqx.Module):
     rewards: Array
     next_obs: Array
     dones: Array
+    timeouts: Array
     metrics: Metrics
 
 
@@ -117,8 +118,9 @@ class SAC(AbstractAlgorithm):
                 obs=state.obs,
                 actions=actions,
                 rewards=next_state.reward,
-                next_obs=next_state.obs,
+                next_obs=next_state.terminal_obs,
                 dones=next_state.done,
+                timeouts=next_state.done * (1.0 - next_state.terminated),
                 metrics=next_state.aux,
             )
             return next_state, rollout
@@ -305,7 +307,12 @@ class SAC(AbstractAlgorithm):
         flat = jtu.tree_map(lambda x: x.reshape(total_size, *x.shape[2:]), rollouts)
         critic_target, buffer = alg_state
         buffer = buffer.add(
-            flat.obs, flat.actions, flat.rewards, flat.next_obs, flat.dones
+            flat.obs,
+            flat.actions,
+            flat.rewards,
+            flat.next_obs,
+            flat.dones,
+            flat.timeouts,
         )
         alg_state = (critic_target, buffer)
 

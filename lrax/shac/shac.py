@@ -34,7 +34,7 @@ from optax import OptState
 from .._custom_types import Metrics, Optimizer
 from .._epsilon import EPSILON
 from ..common.algorithm import AbstractAlgorithm
-from ..common.envs import AbstractEnv, DiffEnvState, EnvState
+from ..common.envs import AbstractEnv, EnvState
 from ..common.normalizers import RunningMeanStd
 from .policies import ActorCritic, Critic
 
@@ -105,7 +105,12 @@ def _compute_target_values(
     if critic_method == "one-step":
         return rollout.rewards + gamma * rollout.next_values
 
-    def _step(carry: tuple[Array, Array, Array], xs: tuple[Array, Array, Array]):
+    gamma = jnp.asarray(gamma)
+    gae_lambda = jnp.asarray(gae_lambda)
+
+    def _step(
+        carry: tuple[Array, Array, Array], xs: tuple[Array, Array, Array]
+    ) -> tuple[tuple[Array, Array, Array], Array]:
         a, b, trace = carry
         done, next_value, reward = xs
 
@@ -166,7 +171,13 @@ class SHAC(AbstractAlgorithm):
         Raises
         ------
         `ValueError` if `num_steps * env.num_envs` is not divisible by
-        `num_minibatches`. `TypeError` if `env.reset` does not return a `DiffEnvState`.
+        `num_minibatches`.
+
+        Notes
+        -----
+        `env` must be a differentiable simulator, since `_actor_loss` backpropagates
+        through `env.step`. This is not checked at runtime; misuse surfaces as a flat
+        (non-differentiable) actor loss.
         """
         total_size = self.num_steps * env.num_envs
         if total_size % self.num_minibatches != 0:
@@ -174,9 +185,6 @@ class SHAC(AbstractAlgorithm):
                 f"num_steps * env.num_envs ({total_size}) must be divisible by "
                 f"num_minibatches ({self.num_minibatches})."
             )
-
-        if not isinstance(eqx.filter_eval_shape(env.reset, key), DiffEnvState):
-            raise TypeError("Unsupported environment: SHAC requires a `DiffEnvState`.")
 
         obs_rms = RunningMeanStd.empty((env.obs_size,)) if self.normalize_obs else None
         ret_rms = RunningMeanStd.empty(()) if self.normalize_returns else None
@@ -193,10 +201,10 @@ class SHAC(AbstractAlgorithm):
         model: ActorCritic,
         alg_state: _AlgState,
         env: AbstractEnv,
-        env_state: DiffEnvState,
+        env_state: EnvState,
         *,
         key: PRNGKeyArray,
-    ) -> tuple[Array, tuple[Rollout, DiffEnvState, _AlgState]]:
+    ) -> tuple[Array, tuple[Rollout, EnvState, _AlgState]]:
         """Compute the negated discounted short-horizon return.
 
         Parameters
@@ -225,7 +233,7 @@ class SHAC(AbstractAlgorithm):
             return lax.stop_gradient(obs_rms).normalize(obs)
 
         def _step(
-            carry: tuple[DiffEnvState, Array, Array, Array],
+            carry: tuple[EnvState, Array, Array, Array],
             xs: tuple[PRNGKeyArray, Array],
         ):
             state, rew_acc, discount, ret = carry
@@ -238,7 +246,7 @@ class SHAC(AbstractAlgorithm):
             if self.squash_actions:
                 actions = jnn.tanh(actions)
 
-            next_state = cast(DiffEnvState, env.step(state, actions))
+            next_state = env.step(state, actions)
 
             raw_reward = next_state.reward
             scaled_reward = raw_reward * self.reward_scale
@@ -424,7 +432,7 @@ class SHAC(AbstractAlgorithm):
         opt_state: dict[str, OptState],
         optim: dict[str, Optimizer],
         env: AbstractEnv,
-        env_state: DiffEnvState,
+        env_state: EnvState,
         key: PRNGKeyArray,
     ) -> tuple[ActorCritic, _AlgState, dict[str, OptState], EnvState, Metrics]:
         """Run one SHAC iteration.

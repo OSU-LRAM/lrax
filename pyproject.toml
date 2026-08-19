@@ -26,3 +26,8 @@ mjx = ["mujoco-mjx>=3.10.0"]
 
 [tool.ruff.lint]
 ignore = ["F722", "F821", "E731", "F811"]
+
+[tool.basedpyright]
+typeCheckingMode = "standard"
+enableTypeIgnoreComments = true
+reportMissingTypeStubs = "none"

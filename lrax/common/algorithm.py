@@ -24,7 +24,7 @@ import equinox as eqx
 from jaxtyping import PRNGKeyArray, PyTree
 from optax import OptState
 
-from .._custom_types import Metrics, Optimizer
+from .._custom_types import Metrics, Optimizers
 from .envs import AbstractEnv, EnvState
 
 type _AlgState = PyTree
@@ -62,12 +62,12 @@ class AbstractAlgorithm(eqx.Module, abc.ABC):
         self,
         model: PyTree,
         alg_state: _AlgState,
-        opt_state: OptState,
-        optim: Optimizer,
+        opt_state: PyTree[OptState],
+        optim: Optimizers,
         env: AbstractEnv,
         env_state: EnvState,
         key: PRNGKeyArray,
-    ) -> tuple[PyTree, _AlgState, OptState, EnvState, Metrics]:
+    ) -> tuple[PyTree, _AlgState, PyTree[OptState], EnvState, Metrics]:
         """Run one training iteration.
 
         Parameters
@@ -75,8 +75,11 @@ class AbstractAlgorithm(eqx.Module, abc.ABC):
         - `model`: The current model.
         - `alg_state`: The current algorithm state, as returned by `init` or by the
             previous call to `step`.
-        - `opt_state`: The optimizer state for `model`.
-        - `optim`: The optax optimizer used to update `model`.
+        - `opt_state`: The optimizer state for `model`. Most algorithms use a single
+            optimizer, but algorithms that optimize distinct parts of the model
+            separately (e.g. `SHAC`) instead take a matching PyTree of optimizer
+            states, e.g. `{"actor": ..., "critic": ...}`.
+        - `optim`: The optax optimizer(s) used to update `model`; see `opt_state`.
         - `env`: The (vectorized) environment to interact with.
         - `env_state`: The environment state to resume from.
         - `key`: A `jax.random.key` used to provide randomness for this iteration.
