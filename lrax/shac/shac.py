@@ -329,7 +329,7 @@ class SHAC(AbstractAlgorithm):
             dones=outputs.done,
             next_values=outputs.next_value,
             metrics={
-                **outputs.metrics,
+                **jtu.tree_map(jnp.mean, outputs.metrics),
                 "mean_reward": jnp.mean(outputs.raw_reward),
                 "done_rate": jnp.mean(outputs.raw_done),
             },
