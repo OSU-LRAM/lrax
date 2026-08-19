@@ -27,7 +27,6 @@ import jax.random as jr
 from equinox.internal import doc_repr
 from jaxtyping import Array, PRNGKeyArray
 
-from .._epsilon import EPSILON
 from ..common.policies import ContinuousCritic
 
 _identity = doc_repr(lambda x: x, "lambda x: x")
@@ -136,7 +135,10 @@ class Actor(eqx.Module):
             - jnp.log(jnp.sqrt(2 * jnp.pi)),
             axis=-1,
         )
-        correction = jnp.sum(jnp.log(1.0 - action**2 + EPSILON), axis=-1)
+
+        # use an epsilon value larger than the project constant; without this SAC will
+        # end up being numerically unstable
+        correction = jnp.sum(jnp.log(1.0 - action**2 + 1e-6), axis=-1)
         log_prob = gaussian_log_prob - correction
 
         return action, log_prob
