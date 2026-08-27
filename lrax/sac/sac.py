@@ -18,7 +18,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-from typing import Literal, cast
+from typing import Literal, cast, override
 
 import equinox as eqx
 import jax
@@ -47,6 +47,7 @@ class Rollout(eqx.Module):
     rewards: Array
     next_obs: Array
     dones: Array
+    timeouts: Array
     metrics: Metrics
 
 
@@ -67,6 +68,7 @@ class SAC(AbstractAlgorithm):
     entropy_coef: float | Literal["auto"] = "auto"
     target_entropy: float | None = None
 
+    @override
     def init(
         self,
         model: ActorCritic,
@@ -116,8 +118,9 @@ class SAC(AbstractAlgorithm):
                 obs=state.obs,
                 actions=actions,
                 rewards=next_state.reward,
-                next_obs=next_state.obs,
+                next_obs=next_state.terminal_obs,
                 dones=next_state.done,
+                timeouts=next_state.done * (1.0 - next_state.terminated),
                 metrics=next_state.aux,
             )
             return next_state, rollout
@@ -235,12 +238,6 @@ class SAC(AbstractAlgorithm):
         scalar metrics averaged over every gradient step. The target critic is
         Polyak-averaged towards the (online) critic after every gradient step.
         """
-        # `lax.scan`'s carry must be plain arrays, so `model`/`state` (which also carry
-        # non-array statics, e.g. activation functions) are partitioned once here and
-        # recombined inside the scan body. `state` is partitioned with `eqx.is_array`,
-        # not `eqx.is_inexact_array`: `ReplayBuffer.ptr`/`size` are integer arrays, and
-        # using the narrower (floating-point only) predicate would silently strand
-        # them in the "static", closed-over half instead of the scan carry
         model_params, model_static = eqx.partition(model, eqx.is_inexact_array)
         state_params, state_static = eqx.partition(alg_state, eqx.is_array)
         loss_and_grad = eqx.filter_value_and_grad(self._loss, has_aux=True)
@@ -288,6 +285,7 @@ class SAC(AbstractAlgorithm):
         alg_state = eqx.combine(state_params, state_static)
         return model, alg_state, opt_state, metrics
 
+    @override
     def step(
         self,
         model: ActorCritic,
@@ -298,7 +296,7 @@ class SAC(AbstractAlgorithm):
         env_state: EnvState,
         key: PRNGKeyArray,
     ) -> tuple[ActorCritic, _AlgState, OptState, EnvState, Metrics]:
-        """Run one SAC iteration: rollout into the replay buffer, then off-policy updates.
+        """Run one SAC iteration.
 
         See `AbstractAlgorithm.step` for the parameter and return descriptions.
         """
@@ -309,7 +307,12 @@ class SAC(AbstractAlgorithm):
         flat = jtu.tree_map(lambda x: x.reshape(total_size, *x.shape[2:]), rollouts)
         critic_target, buffer = alg_state
         buffer = buffer.add(
-            flat.obs, flat.actions, flat.rewards, flat.next_obs, flat.dones
+            flat.obs,
+            flat.actions,
+            flat.rewards,
+            flat.next_obs,
+            flat.dones,
+            flat.timeouts,
         )
         alg_state = (critic_target, buffer)
 

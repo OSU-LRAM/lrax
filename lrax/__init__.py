@@ -21,5 +21,6 @@
 from ._epsilon import EPSILON
 from .ppo import PPO
 from .sac import SAC
+from .shac import SHAC
 
-__all__ = ["EPSILON", "PPO", "SAC"]
+__all__ = ["EPSILON", "PPO", "SAC", "SHAC"]

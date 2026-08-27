@@ -19,10 +19,9 @@
 # THE SOFTWARE.
 
 import abc
-from typing import Any
 
 import equinox as eqx
-from jaxtyping import Array, PRNGKeyArray
+from jaxtyping import Array, PRNGKeyArray, PyTree
 
 from ..._custom_types import Metrics
 
@@ -30,14 +29,16 @@ from ..._custom_types import Metrics
 class EnvState(eqx.Module):
     """The state of a vectorized environment."""
 
-    pipeline_state: Any
+    pipeline_state: PyTree
     obs: Array
     reward: Array
     done: Array
+    terminated: Array
+    terminal_obs: Array
     aux: Metrics
 
 
-class AbstractEnv(eqx.Module):
+class AbstractEnv(eqx.Module, abc.ABC):
     """Abstract base class for a simulation environment."""
 
     obs_size: eqx.AbstractVar[int]
@@ -54,7 +55,7 @@ class AbstractEnv(eqx.Module):
 
         Returns
         -------
-        The initial `EnvState`.
+        The initial environment state.
         """
         raise NotImplementedError
 
@@ -69,7 +70,6 @@ class AbstractEnv(eqx.Module):
 
         Returns
         -------
-        The next `EnvState`. Any environment whose episode ends this step should be
-        auto-reset, with `done` reporting the pre-reset termination/truncation flag.
+        The next environment state.
         """
         raise NotImplementedError

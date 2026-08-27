@@ -42,9 +42,11 @@ class ReplayBuffer(eqx.Module):
     rewards: Array
     next_obs: Array
     dones: Array
+    timeouts: Array
     ptr: Array
     size: Array
     capacity: int = eqx.field(static=True)
+    handle_timeout_termination: bool = eqx.field(static=True, default=True)
 
     @classmethod
     def empty(cls, capacity: int, obs_size: int, act_size: int) -> "ReplayBuffer":
@@ -67,6 +69,7 @@ class ReplayBuffer(eqx.Module):
             rewards=jnp.zeros((capacity,)),
             next_obs=jnp.zeros((capacity, obs_size)),
             dones=jnp.zeros((capacity,)),
+            timeouts=jnp.zeros((capacity,)),
             ptr=jnp.array(0, dtype=jnp.int32),
             size=jnp.array(0, dtype=jnp.int32),
             capacity=capacity,
@@ -79,6 +82,7 @@ class ReplayBuffer(eqx.Module):
         rewards: Array,
         next_obs: Array,
         dones: Array,
+        timeouts: Array,
     ) -> "ReplayBuffer":
         """Insert a batch of transitions, overwriting the oldest entries if full.
 
@@ -88,7 +92,10 @@ class ReplayBuffer(eqx.Module):
         - `actions`: A JAX array with shape `(n, act_size)`.
         - `rewards`: A JAX array with shape `(n,)`.
         - `next_obs`: A JAX array with shape `(n, obs_size)`.
-        - `dones`: A JAX array with shape `(n,)`.
+        - `dones`: A JAX array with shape `(n,)`. Whether the episode ended this step,
+            by termination or truncation (i.e. an `EnvState.done`, not `.terminated`).
+        - `timeouts`: A JAX array with shape `(n,)`. Whether the episode ended this step
+            specifically due to a timeout/truncation.
 
         Returns
         -------
@@ -102,9 +109,11 @@ class ReplayBuffer(eqx.Module):
             rewards=self.rewards.at[idx].set(rewards),
             next_obs=self.next_obs.at[idx].set(next_obs),
             dones=self.dones.at[idx].set(dones),
+            timeouts=self.timeouts.at[idx].set(timeouts),
             ptr=(self.ptr + n) % self.capacity,
             size=jnp.minimum(self.size + n, self.capacity),
             capacity=self.capacity,
+            handle_timeout_termination=self.handle_timeout_termination,
         )
 
     def sample(self, batch_size: int, *, key: PRNGKeyArray) -> Transition:
@@ -121,10 +130,13 @@ class ReplayBuffer(eqx.Module):
         A `Transition` whose fields have a leading `batch_size` dimension.
         """
         idx = jr.randint(key, (batch_size,), 0, self.size)
+        dones = self.dones[idx]
+        if self.handle_timeout_termination:
+            dones = dones * (1.0 - self.timeouts[idx])
         return Transition(
             obs=self.obs[idx],
             actions=self.actions[idx],
             rewards=self.rewards[idx],
             next_obs=self.next_obs[idx],
-            dones=self.dones[idx],
+            dones=dones,
         )

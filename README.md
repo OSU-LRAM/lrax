@@ -6,7 +6,7 @@ realtime hardware deployment.
 
 ## Main Features
 
-- Standard robotics learning algorithms, such as `PPO` and `SAC`
+- Standard robotics learning algorithms, such as `PPO`, `SAC`, and `SHAC`
 - Vectorized environments for GPU-accelerated training
 - Training interfaces for RL and supervised learning with built-in logging support
 
@@ -61,6 +61,8 @@ class PointMassEnv(AbstractEnv):
             obs=obs,
             reward=jnp.zeros(self.num_envs),
             done=jnp.zeros(self.num_envs, dtype=bool),
+            terminated=jnp.zeros(self.num_envs, dtype=bool),
+            terminal_obs=obs,
             aux={},
         )
 
@@ -70,11 +72,14 @@ class PointMassEnv(AbstractEnv):
         pos = pos + vel * 0.1
         obs = jnp.stack([pos, vel], axis=-1)
         reward = -(pos**2)
+        done = jnp.zeros(self.num_envs, dtype=bool)
         return EnvState(
             pipeline_state=None,
             obs=obs,
             reward=reward,
-            done=jnp.zeros(self.num_envs, dtype=bool),
+            done=done,
+            terminated=jnp.zeros(self.num_envs, dtype=bool),
+            terminal_obs=obs,
             aux={}, # include auxilliary data from the environment
         )
 
@@ -85,7 +90,6 @@ env = PointMassEnv()
 actor = Actor(env.obs_size, env.act_size, width_size=32, depth=2, key=actor_key)
 critic = Critic(env.obs_size, width_size=32, depth=2, key=critic_key)
 
-# uses the `PolicyTrainer` to train a policy using the custom environment
 trained_model = PolicyTrainer(name="ppo").learn(
     train_key,
     ActorCritic(actor, critic),
