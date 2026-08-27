@@ -175,9 +175,7 @@ class SHAC(AbstractAlgorithm):
 
         Notes
         -----
-        `env` must be a differentiable simulator, since `_actor_loss` backpropagates
-        through `env.step`. This is not checked at runtime; misuse surfaces as a flat
-        (non-differentiable) actor loss.
+        `env` must be a differentiable simulator. This is not checked at runtime!
         """
         total_size = self.num_steps * env.num_envs
         if total_size % self.num_minibatches != 0:
@@ -218,7 +216,7 @@ class SHAC(AbstractAlgorithm):
 
         Returns
         -------
-        The scalar actor loss, and an auxiliary tuple comprising the `Rollout` used for
+        The scalar actor loss and an auxiliary tuple comprising the `Rollout` used for
         critic training, the environment state to resume from on the next call, and
         `alg_state` with `obs_rms`/`ret_rms` updated (gradient-free) from this rollout.
         """

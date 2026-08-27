@@ -25,12 +25,7 @@ from jaxtyping import Array, PRNGKeyArray
 
 
 class Transition(eqx.Module):
-    """A batch of `(obs, action, reward, next_obs, done)` transitions.
-
-    `dones` excludes timeouts: it is `1` only on a genuine termination, `0` on a
-    truncation or a non-terminal step. This makes it directly usable as a bootstrap
-    mask, e.g. `target_q = reward + gamma * (1 - dones) * next_value`.
-    """
+    """A batch of `(obs, action, reward, next_obs, done)` transitions."""
 
     obs: Array
     actions: Array
@@ -40,13 +35,7 @@ class Transition(eqx.Module):
 
 
 class ReplayBuffer(eqx.Module):
-    """A fixed-capacity circular buffer of transitions, used for off-policy training.
-
-    Stores raw `dones` and `timeouts` separately (mirroring `stable_baselines3`'s
-    `ReplayBuffer`) and combines them at sample time, so a transition's termination and
-    timeout status can be recorded independently of how the buffer is configured to
-    interpret them.
-    """
+    """A fixed-capacity circular buffer of transitions, used for off-policy training."""
 
     obs: Array
     actions: Array
@@ -138,9 +127,7 @@ class ReplayBuffer(eqx.Module):
 
         Returns
         -------
-        A `Transition` whose fields have a leading `batch_size` dimension. `dones` is
-        only the dones that are not due to timeouts (i.e. `dones * (1 - timeouts)`)
-        when `self.handle_timeout_termination` is set, else the raw `dones`.
+        A `Transition` whose fields have a leading `batch_size` dimension.
         """
         idx = jr.randint(key, (batch_size,), 0, self.size)
         dones = self.dones[idx]
