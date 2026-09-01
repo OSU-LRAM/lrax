@@ -25,10 +25,11 @@ uv pip install git+https://github.com/OSU-LRAM/lrax.git
 uv add git+ssh://git@github.com/OSU-LRAM/lrax.git
 ```
 
-To install the MuJoCo helpers, include the optional `mjx` dependencies
+The base install pulls in CPU-only JAX. For CUDA-accelerated JAX on Linux,
+include the optional `cuda` dependencies
 
 ```bash
-uv add "lrax[mjx] @ git+ssh://git@github.com/OSU-LRAM/lrax.git"
+uv add "lrax[cuda] @ git+ssh://git@github.com/OSU-LRAM/lrax.git"
 ```
 
 ## Usage
@@ -42,7 +43,7 @@ import jax.random as jr
 import optax
 from jaxtyping import Array, PRNGKeyArray
 from lrax import PPO
-from lrax.common.envs import AbstractEnv, EnvState
+from lrax.common.env import AbstractEnv, EnvState
 from lrax.common.policies import Actor, ActorCritic, Critic
 from lrax.common.trainer import PolicyTrainer
 
@@ -80,8 +81,9 @@ class PointMassEnv(AbstractEnv):
             done=done,
             terminated=jnp.zeros(self.num_envs, dtype=bool),
             terminal_obs=obs,
-            aux={}, # include auxilliary data from the environment
+            aux={},  # include auxiliary data from the environment
         )
+
 
 key = jr.key(0)
 actor_key, critic_key, train_key = jr.split(key, 3)

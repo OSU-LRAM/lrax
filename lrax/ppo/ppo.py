@@ -32,7 +32,7 @@ from optax import OptState
 from .._custom_types import Metrics, Optimizer
 from .._epsilon import EPSILON
 from ..common.algorithm import AbstractAlgorithm
-from ..common.envs import AbstractEnv, EnvState
+from ..common.env import AbstractEnv, EnvState
 from ..common.policies import ActorCritic
 
 type _AlgState = None

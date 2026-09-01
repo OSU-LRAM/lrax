@@ -25,7 +25,7 @@ from jaxtyping import PRNGKeyArray, PyTree
 from optax import OptState
 
 from .._custom_types import Metrics, Optimizers
-from .envs import AbstractEnv, EnvState
+from .env import AbstractEnv, EnvState
 
 type _AlgState = PyTree
 

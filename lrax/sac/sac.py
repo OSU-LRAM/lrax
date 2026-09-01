@@ -32,7 +32,7 @@ from optax import OptState
 from .._custom_types import Metrics, Optimizer
 from ..common.algorithm import AbstractAlgorithm
 from ..common.buffers import ReplayBuffer, Transition
-from ..common.envs import AbstractEnv, EnvState
+from ..common.env import AbstractEnv, EnvState
 from ..common.policies import ContinuousCritic
 from .policies import ActorCritic
 

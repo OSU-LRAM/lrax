@@ -1,0 +1,63 @@
+name: Bug Report
+description: Report a bug.
+title: "<Please write a descriptive title>"
+labels: [needs triage]
+
+body:
+  - type: markdown
+    attributes:
+      value: >
+        Thank you for taking the time to file a bug report! Before creating a new
+        issue, please make sure to take a few minutes to check the issue tracker
+        for existing issues about the bug.
+
+  - type: textarea
+    attributes:
+      label: "Issue Description"
+      description: >
+        Please provide a clear and concise description of what the bug is.
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: "Steps to Reproduce"
+      description: >
+        Please provide the steps that should be taken to reproduce the bug.
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: "Expected Behavior"
+      description: >
+        Please describe or show an example of the expected behavior.
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: "Error Message"
+      description: >
+        Please include the full error message, if any.
+      placeholder: >
+        << Full traceback starting from `Traceback: ...` >>
+      render: bash
+
+  - type: textarea
+    attributes:
+      label: "Runtime Environment"
+      description: >
+        Please provide the versions of lrax, Python, and JAX (jax and jaxlib),
+        the operating system, and whether JAX is running on CPU or GPU.
+      placeholder: >
+        lrax 0.1.0, Python 3.14, jax 0.10.2 / jaxlib 0.10.2 on CUDA GPU,
+        Ubuntu 24.04.
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: "Additional Context"
+      description: >
+        Please provide any additional context needed to understand the bug.
