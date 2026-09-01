@@ -32,14 +32,6 @@ include the optional `cuda` dependencies
 uv add "lrax[cuda] @ git+ssh://git@github.com/OSU-LRAM/lrax.git"
 ```
 
-To install the MuJoCo helpers, include the optional `mjx` dependencies
-
-```bash
-uv add "lrax[mjx] @ git+ssh://git@github.com/OSU-LRAM/lrax.git"
-```
-
-Extras combine, e.g. `lrax[cuda,mjx]`.
-
 ## Usage
 
 See the following example for training a policy with PPO against a custom
