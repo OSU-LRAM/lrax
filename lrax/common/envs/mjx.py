@@ -18,8 +18,6 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-from typing import Optional
-
 import mujoco
 from jaxtyping import Array
 from mujoco import mjx
@@ -41,7 +39,7 @@ def load_model(path: str) -> Model:
     return mjx.put_model(model)
 
 
-def reset(model: Model, qpos: Optional[Array] = None) -> Data:
+def reset(model: Model, qpos: Array | None = None) -> Data:
     """Create an initial simulation state.
 
     Parameters

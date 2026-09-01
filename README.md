@@ -25,11 +25,20 @@ uv pip install git+https://github.com/OSU-LRAM/lrax.git
 uv add git+ssh://git@github.com/OSU-LRAM/lrax.git
 ```
 
+The base install pulls in CPU-only JAX. For CUDA-accelerated JAX on Linux,
+include the optional `cuda` dependencies
+
+```bash
+uv add "lrax[cuda] @ git+ssh://git@github.com/OSU-LRAM/lrax.git"
+```
+
 To install the MuJoCo helpers, include the optional `mjx` dependencies
 
 ```bash
 uv add "lrax[mjx] @ git+ssh://git@github.com/OSU-LRAM/lrax.git"
 ```
+
+Extras combine, e.g. `lrax[cuda,mjx]`.
 
 ## Usage
 
@@ -80,8 +89,9 @@ class PointMassEnv(AbstractEnv):
             done=done,
             terminated=jnp.zeros(self.num_envs, dtype=bool),
             terminal_obs=obs,
-            aux={}, # include auxilliary data from the environment
+            aux={},  # include auxiliary data from the environment
         )
+
 
 key = jr.key(0)
 actor_key, critic_key, train_key = jr.split(key, 3)

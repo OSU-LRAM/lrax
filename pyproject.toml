@@ -10,18 +10,19 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "equinox>=0.13.8",
-    "jax[cuda]>=0.10.2; sys_platform != 'darwin'",
-    "jax>=0.10.2; sys_platform == 'darwin'",
+    "jax>=0.10.2",
     "jaxtyping>=0.3.11",
     "lightning>=2.6.5",
     "matplotlib>=3.11.1",
     "optax>=0.2.8",
     "optimistix>=0.1.0",
     "pyyaml>=6.0.3",
+    "tqdm>=4.67.0",
     "wandb>=0.19.0",
 ]
 
 [project.optional-dependencies]
+cuda = ["jax[cuda]>=0.10.2; sys_platform != 'darwin'"]
 mjx = ["mujoco-mjx>=3.10.0"]
 
 [tool.ruff.lint]

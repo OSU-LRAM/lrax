@@ -266,7 +266,7 @@ class PolicyTrainer(BaseTrainer):
             `algorithm.init` once, then `algorithm.step` in a loop, threading the
             algorithm state `init` returns through every `step` call.
         - `optim`: The optax optimizer(s) used to update `model`. For algorithms that
-            require multiple optimzers (like `SHAC`), this will be a PyTree of
+            require multiple optimizers (like `SHAC`), this will be a PyTree of
             optimizers.
         - `num_iterations`: The number of times to call `algorithm.step`. (Keyword
             only argument.)
