@@ -43,7 +43,7 @@ import jax.random as jr
 import optax
 from jaxtyping import Array, PRNGKeyArray
 from lrax import PPO
-from lrax.common.envs import AbstractEnv, EnvState
+from lrax.common.env import AbstractEnv, EnvState
 from lrax.common.policies import Actor, ActorCritic, Critic
 from lrax.common.trainer import PolicyTrainer
 

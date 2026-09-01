@@ -35,7 +35,7 @@ from tqdm import tqdm
 from .._custom_types import Metrics, Optimizer
 from .algorithm import AbstractAlgorithm
 from .callbacks import Callback, StopTraining
-from .envs import AbstractEnv
+from .env import AbstractEnv
 from .logger import Logger
 from .policies import ActorCritic
 

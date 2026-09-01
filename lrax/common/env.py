@@ -23,7 +23,7 @@ import abc
 import equinox as eqx
 from jaxtyping import Array, PRNGKeyArray, PyTree
 
-from ..._custom_types import Metrics
+from .._custom_types import Metrics
 
 
 class EnvState(eqx.Module):
