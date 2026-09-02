@@ -116,10 +116,7 @@ class SPD(eqx.Module):
 class TamedMLP(eqx.Module):
     """Implements a tamed MLP, which helps prevent model blow-up during training.
 
-    For additional information, see,
-
-    "On neural differential equations"
-    (https://ora.ox.ac.uk/objects/uuid:af32d844-df84-4fdc-824d-44bebc3d7aa9)
+    "On Neural Differential Equations", Patrick Kidger.
     """
 
     mlp: eqx.nn.MLP
