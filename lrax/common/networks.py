@@ -18,6 +18,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
+import math
 from collections.abc import Callable
 from typing import Literal
 
@@ -29,7 +30,9 @@ import jax.random as jr
 from equinox.internal import doc_repr
 from jaxtyping import Array, PRNGKeyArray
 
+from .._epsilon import EPSILON
 from .activations import lipswish
+from .layers import VBLL
 
 _tanh = doc_repr(jnn.tanh, "<function tanh>")
 _identity = doc_repr(lambda x: x, "lambda x: x")
@@ -72,7 +75,7 @@ class SPD(eqx.Module):
         - `width_size`: The size of each hidden layer.
         - `depth`: The number of hidden layers, including the output layer.
         - `activation`: The activation function after each hidden layer. Defaults to
-            `jax.nn.tanh`.
+            `lipswish`.
         - `final_activation`: The activation function after the output layer. Defaults
             to the identity.
         - `metric`: The positive function to apply to the eigenvalues. Defaults to
@@ -113,6 +116,183 @@ class SPD(eqx.Module):
         return M
 
 
+def _expm_sym(U: Array) -> Array:
+    """The matrix exponential of a symmetric matrix, via its eigendecomposition."""
+    V, w = jax.lax.linalg.eigh(U, sort_eigenvalues=False)
+    return (V * jnp.exp(w)) @ V.T
+
+
+def _logm_sym(M: Array) -> Array:
+    """The matrix logarithm of an SPD matrix, with eigenvalues floored at `EPSILON`."""
+    V, w = jax.lax.linalg.eigh(M, sort_eigenvalues=False)
+    return (V * jnp.log(jnp.clip(w, EPSILON))) @ V.T
+
+
+def _vech(U: Array) -> Array:
+    """Flatten a symmetric matrix into its lower triangle.
+
+    The off-diagonal entries are scaled by `sqrt(2)`, making the map an isometry: the
+    result's Euclidean norm equals the matrix's Frobenius norm.
+    """
+    n = U.shape[0]
+    i_lower, j_lower = jnp.tril_indices(n, -1)
+    return jnp.concatenate([jnp.diagonal(U), math.sqrt(2.0) * U[i_lower, j_lower]])
+
+
+def _unvech(v: Array, n: int) -> Array:
+    """Rebuild the symmetric `(n, n)` matrix flattened by `_vech`."""
+    diag, off_diag = jnp.split(v, (n,))
+    off_diag = off_diag / math.sqrt(2.0)
+    i_lower, j_lower = jnp.tril_indices(n, -1)
+    U = jnp.diag(diag)
+    U = U.at[i_lower, j_lower].set(off_diag)
+    U = U.at[j_lower, i_lower].set(off_diag)
+    return U
+
+
+class BayesianSPD(eqx.Module):
+    """Symmetric positive-definite network with calibrated uncertainty.
+
+    This model defines a Bayesian last-layer neural network that preserves the
+    geometric structure of the SPD manifold. To do so, we use the Log-Euclidean metric,
+    which ensures that uncertainty defined in the tangent space composes easily and maps
+    back to the group without distortion.
+
+    - "Variational Bayesian Last Layers", James Harrison, John Willes, and Jasper Snoek.
+    - "Geometric Means in a Novel Vector Space Structure on Symmetric Positive-Definite
+      Matrices", Vincent Arsigny, Pierre Fillard, Xavier Pennec, and Nicholas Ayache.
+    """
+
+    size: int = eqx.field(static=True)
+    shape: tuple[int, ...] = eqx.field(static=True)
+    mlp: eqx.nn.MLP
+    head: VBLL
+
+    def __init__(
+        self,
+        in_size: int | Literal["scalar"],
+        diag_size: int,
+        width_size: int,
+        depth: int,
+        activation: Callable = _lipswish,
+        parameterization: Literal["dense", "diagonal"] = "dense",
+        prior_scale: float = 1.0,
+        wishart_scale: float = 1e-2,
+        wishart_dof: float = 1.0,
+        noise_scale: float = 1e-2,
+        *,
+        key: PRNGKeyArray,
+    ):
+        """Initialize a Bayesian SPD network.
+
+        Parameters
+        ----------
+        - `in_size`: The input size. The input to the module should be a vector of shape
+            `(in_size,)`.
+        - `diag_size`: The diagonal size of the predicted matrix. The module predicts a
+            matrix and a variance, each of shape `(diag_size, diag_size)`.
+        - `width_size`: The size of each hidden layer, and of the features seen by the
+            last layer.
+        - `depth`: The number of hidden layers in the backbone.
+        - `activation`: The activation function after each hidden layer, the last
+            included. Defaults to `lipswish`.
+        - `parameterization`: `"dense"` for a full per-row weight covariance in the last
+            layer, `"diagonal"` for a factorised one. Defaults to `"dense"`.
+        - `prior_scale`: Scale of the last layer's zero-mean weight prior. Defaults
+            to `1`.
+        - `wishart_scale`: Scale of the Wishart prior on the tangent-space noise
+            precision. Defaults to `1e-2`.
+        - `wishart_dof`: Degrees-of-freedom slack of that prior; larger values pull the
+            noise variance lower and harder. Defaults to `1`.
+        - `noise_scale`: Initial tangent-space observation-noise standard deviation.
+            Defaults to `1e-2`.
+        - `key`: A `jax.random.key` used to provide randomness for parameter
+            initialisation. (Keyword only argument.)
+        """
+        mlp_key, head_key = jr.split(key)
+        self.size = int(diag_size * (diag_size + 1) / 2)
+        self.shape = (diag_size, diag_size)
+        self.mlp = eqx.nn.MLP(
+            in_size,
+            width_size,
+            width_size,
+            depth,
+            activation,
+            final_activation=activation,
+            key=mlp_key,
+        )
+        self.head = VBLL(
+            width_size,
+            self.size,
+            parameterization,
+            prior_scale,
+            wishart_scale,
+            wishart_dof,
+            noise_scale,
+            key=head_key,
+        )
+
+    def __call__(self, x: Array) -> tuple[Array, Array]:
+        """Predict an SPD matrix and its tangent-space variance for input `x`.
+
+        Parameters
+        ----------
+        - `x`: A JAX array with shape `(in_size,)`.
+
+        Returns
+        -------
+        A `(matrix, variance)` tuple. `matrix` is the `(n, n)` SPD prediction, the
+        exponential of the tangent-space mean, (i.e., the geodesic mean, not the
+        arithmetic mean). `variance` is the `(n, n)` per-entry variance of `logm`
+        of that matrix, combining the epistemic and observation-noise terms.
+        """
+        features = self.mlp(x)
+        mean, variance = self.head(features)
+        tangent_mean = _unvech(mean, self.shape[0])
+        tangent_std = _unvech(jnp.sqrt(variance), self.shape[0])
+        return _expm_sym(tangent_mean), tangent_std**2
+
+    def sample(self, x: Array, *, key: PRNGKeyArray, noise: bool = True) -> Array:
+        """Sample one SPD matrix from the predictive distribution.
+
+        The sample is reparameterised, so gradients flow through it. Use this when the
+        matrix feeds a downstream loss.
+
+        Parameters
+        ----------
+        - `x`: A JAX array with shape `(in_size,)`.
+        - `key`: A `jax.random.key` for the tangent-space noise. (Keyword only argument.)
+        - `noise`: Whether to include the observation-noise term. Set `False` to sample
+            only the epistemic weight-posterior uncertainty. Defaults to `True`.
+
+        Returns
+        -------
+        An SPD JAX array with shape `(diag_size, diag_size)`.
+        """
+        features = self.mlp(x)
+        mean, _ = self.head(features)
+        variance = self.head.epistemic_variance(features)
+        if noise:
+            variance = variance + self.head.noise_variance
+        eps = jr.normal(key, mean.shape)
+        tangent_sample = _unvech(mean + jnp.sqrt(variance) * eps, self.shape[0])
+        return _expm_sym(tangent_sample)
+
+    def log_likelihood(self, x: Array, y: Array) -> Array:
+        """The expected tangent-space log-likelihood of the SPD target `y` (the ELBO
+        data term)."""
+        return self.head.log_likelihood(self.mlp(x), _vech(_logm_sym(y)))
+
+    def regularizer(self) -> Array:
+        """The ELBO prior penalty of the last layer (weight KL plus the Wishart noise
+        term).
+
+        Combine it with the data term as
+        `-mean(log_likelihood) + regularization_weight * regularizer()`.
+        """
+        return self.head.regularizer()
+
+
 class TamedMLP(eqx.Module):
     """Implements a tamed MLP, which helps prevent model blow-up during training.
 
@@ -133,7 +313,7 @@ class TamedMLP(eqx.Module):
         *,
         key: PRNGKeyArray,
     ):
-        """Initialize an SPD network.
+        """Initialize a tamed MLP.
 
         Parameters
         ----------
