@@ -165,7 +165,7 @@ class BayesianSPD(eqx.Module):
 
     size: int = eqx.field(static=True)
     shape: tuple[int, ...] = eqx.field(static=True)
-    mlp: eqx.nn.MLP
+    base: eqx.nn.MLP
     head: VBLL
 
     def __init__(
@@ -193,7 +193,7 @@ class BayesianSPD(eqx.Module):
             matrix and a variance, each of shape `(diag_size, diag_size)`.
         - `width_size`: The size of each hidden layer, and of the features seen by the
             last layer.
-        - `depth`: The number of hidden layers in the backbone.
+        - `depth`: The number of hidden layers in the base.
         - `activation`: The activation function after each hidden layer, the last
             included. Defaults to `lipswish`.
         - `parameterization`: `"dense"` for a full per-row weight covariance in the last
@@ -212,7 +212,7 @@ class BayesianSPD(eqx.Module):
         mlp_key, head_key = jr.split(key)
         self.size = int(diag_size * (diag_size + 1) / 2)
         self.shape = (diag_size, diag_size)
-        self.mlp = eqx.nn.MLP(
+        self.base = eqx.nn.MLP(
             in_size,
             width_size,
             width_size,
@@ -246,7 +246,7 @@ class BayesianSPD(eqx.Module):
         arithmetic mean). `variance` is the `(n, n)` per-entry variance of `logm`
         of that matrix, combining the epistemic and observation-noise terms.
         """
-        features = self.mlp(x)
+        features = self.base(x)
         mean, variance = self.head(features)
         tangent_mean = _unvech(mean, self.shape[0])
         tangent_std = _unvech(jnp.sqrt(variance), self.shape[0])
@@ -269,19 +269,134 @@ class BayesianSPD(eqx.Module):
         -------
         An SPD JAX array with shape `(diag_size, diag_size)`.
         """
-        features = self.mlp(x)
-        mean, _ = self.head(features)
-        variance = self.head.epistemic_variance(features)
-        if noise:
-            variance = variance + self.head.noise_variance
-        eps = jr.normal(key, mean.shape)
-        tangent_sample = _unvech(mean + jnp.sqrt(variance) * eps, self.shape[0])
-        return _expm_sym(tangent_sample)
+        tangent_sample = self.head.sample(self.base(x), key=key, noise=noise)
+        return _expm_sym(_unvech(tangent_sample, self.shape[0]))
 
     def log_likelihood(self, x: Array, y: Array) -> Array:
         """The expected tangent-space log-likelihood of the SPD target `y` (the ELBO
         data term)."""
-        return self.head.log_likelihood(self.mlp(x), _vech(_logm_sym(y)))
+        return self.head.log_likelihood(self.base(x), _vech(_logm_sym(y)))
+
+    def regularizer(self) -> Array:
+        """The ELBO prior penalty of the last layer (weight KL plus the Wishart noise
+        term).
+
+        Combine it with the data term as
+        `-mean(log_likelihood) + regularization_weight * regularizer()`.
+        """
+        return self.head.regularizer()
+
+
+class BayesianMLP(eqx.Module):
+    """A regression network with a Bayesian last layer for calibrated uncertainty.
+
+    "Variational Bayesian Last Layers", James Harrison, John Willes, and Jasper Snoek.
+    """
+
+    base: eqx.nn.MLP
+    head: VBLL
+
+    def __init__(
+        self,
+        in_size: int | Literal["scalar"],
+        out_size: int,
+        width_size: int,
+        depth: int,
+        activation: Callable = _lipswish,
+        parameterization: Literal["dense", "diagonal"] = "dense",
+        prior_scale: float = 1.0,
+        wishart_scale: float = 1e-2,
+        wishart_dof: float = 1.0,
+        noise_scale: float = 1e-2,
+        *,
+        key: PRNGKeyArray,
+    ):
+        """Initialize a Bayesian MLP.
+
+        Parameters
+        ----------
+        - `in_size`: The input size. The input to the module should be a vector of shape
+            `(in_size,)`.
+        - `out_size`: The target size. The module predicts a mean and a variance, each
+            of shape `(out_size,)`.
+        - `width_size`: The size of each hidden layer, and of the features seen by the
+            last layer.
+        - `depth`: The number of hidden layers in the `eqx.nn.MLP` base.
+        - `activation`: The activation function after each hidden layer, the last
+            included. Defaults to `lipswish`.
+        - `parameterization`: `"dense"` for a full per-row weight covariance in the last
+            layer, `"diagonal"` for a factorised one. Defaults to `"dense"`.
+        - `prior_scale`: Scale of the last layer's zero-mean weight prior. Defaults
+            to `1`.
+        - `wishart_scale`: Scale of the Wishart prior on the noise precision. Defaults
+            to `1e-2`.
+        - `wishart_dof`: Degrees-of-freedom slack of that prior; larger values pull the
+            noise variance lower and harder. Defaults to `1`.
+        - `noise_scale`: Initial observation-noise standard deviation. Defaults to
+            `1e-2`.
+        - `key`: A `jax.random.key` used to provide randomness for parameter
+            initialisation. (Keyword only argument.)
+        """
+        mlp_key, head_key = jr.split(key)
+        self.base = eqx.nn.MLP(
+            in_size,
+            width_size,
+            width_size,
+            depth,
+            activation,
+            final_activation=activation,
+            key=mlp_key,
+        )
+        self.head = VBLL(
+            width_size,
+            out_size,
+            parameterization,
+            prior_scale,
+            wishart_scale,
+            wishart_dof,
+            noise_scale,
+            key=head_key,
+        )
+
+    def _features(self, x: Array) -> Array:
+        """The base `eqx.nn.MLP` feature map consumed by the Bayesian last layer."""
+        return self.base(x)
+
+    def __call__(self, x: Array) -> tuple[Array, Array]:
+        """Predict a mean and variance for input `x`.
+
+        Parameters
+        ----------
+        - `x`: A JAX array with shape `(in_size,)`.
+
+        Returns
+        -------
+        A `(mean, variance)` tuple, each a JAX array with shape `(out_size,)`. `variance`
+        combines the epistemic and observation-noise terms.
+        """
+        return self.head(self._features(x))
+
+    def sample(self, x: Array, *, key: PRNGKeyArray, noise: bool = True) -> Array:
+        """Sample one prediction from the predictive distribution.
+
+        The sample is reparameterised, so gradients flow through it.
+
+        Parameters
+        ----------
+        - `x`: A JAX array with shape `(in_size,)`.
+        - `key`: A `jax.random.key` for the predictive noise. (Keyword only argument.)
+        - `noise`: Whether to include the observation-noise term. Set `False` to sample
+            only the epistemic weight-posterior uncertainty. Defaults to `True`.
+
+        Returns
+        -------
+        A JAX array with shape `(out_size,)`.
+        """
+        return self.head.sample(self._features(x), key=key, noise=noise)
+
+    def log_likelihood(self, x: Array, y: Array) -> Array:
+        """The expected log-likelihood of the target `y` (the ELBO data term)."""
+        return self.head.log_likelihood(self._features(x), y)
 
     def regularizer(self) -> Array:
         """The ELBO prior penalty of the last layer (weight KL plus the Wishart noise
@@ -354,6 +469,88 @@ class TamedMLP(eqx.Module):
         A JAX array with shape `(out_size,)`.
         """
         return self.out_scale * self.mlp(x)
+
+
+class BayesianTamedMLP(BayesianMLP):
+    """A tamed regression network with a Bayesian last layer.
+
+    This model is similar to the `TamedMLP`, but applies a Bayesian last layer after the
+    bounded activation (the bounded activation tames the predictive mean).
+
+    - "Variational Bayesian Last Layers", James Harrison, John Willes, and Jasper Snoek.
+    - "On Neural Differential Equations", Patrick Kidger.
+    """
+
+    out_scale: Array
+
+    def __init__(
+        self,
+        in_size: int | Literal["scalar"],
+        out_size: int,
+        width_size: int,
+        depth: int,
+        activation: Callable = _lipswish,
+        final_activation: Callable = _tanh,
+        parameterization: Literal["dense", "diagonal"] = "dense",
+        prior_scale: float = 1.0,
+        wishart_scale: float = 1e-2,
+        wishart_dof: float = 1.0,
+        noise_scale: float = 1e-2,
+        *,
+        key: PRNGKeyArray,
+    ):
+        """Initialize a Bayesian tamed MLP.
+
+        Parameters
+        ----------
+        - `in_size`: The input size. The input to the module should be a vector of shape
+            `(in_size,)`.
+        - `out_size`: The target size. The module predicts a mean and a variance, each
+            of shape `(out_size,)`.
+        - `width_size`: The size of each hidden layer, and of the features seen by the
+            last layer.
+        - `depth`: The number of hidden layers in the base.
+        - `activation`: The activation function after each hidden layer. Defaults to
+            `lipswish`.
+        - `final_activation`: The activation function after the base's output layer;
+            this is the taming and should be bounded. Defaults to `jax.nn.tanh`.
+        - `parameterization`: `"dense"` for a full per-row weight covariance in the last
+            layer, `"diagonal"` for a factorised one. Defaults to `"dense"`.
+        - `prior_scale`: Scale of the last layer's zero-mean weight prior. Defaults
+            to `1`.
+        - `wishart_scale`: Scale of the Wishart prior on the noise precision. Defaults
+            to `1e-2`.
+        - `wishart_dof`: Degrees-of-freedom slack of that prior; larger values pull the
+            noise variance lower and harder. Defaults to `1`.
+        - `noise_scale`: Initial observation-noise standard deviation. Defaults to `1e-2`.
+        - `key`: A `jax.random.key` used to provide randomness for parameter
+            initialisation. (Keyword only argument.)
+        """
+        mlp_key, head_key, scale_key = jr.split(key, 3)
+        self.out_scale = jr.normal(scale_key)
+        self.base = eqx.nn.MLP(
+            in_size,
+            width_size,
+            width_size,
+            depth,
+            activation,
+            final_activation,
+            key=mlp_key,
+        )
+        self.head = VBLL(
+            width_size,
+            out_size,
+            parameterization,
+            prior_scale,
+            wishart_scale,
+            wishart_dof,
+            noise_scale,
+            key=head_key,
+        )
+
+    def _features(self, x: Array) -> Array:
+        """The tamed, scaled base feature map consumed by the last layer."""
+        return self.out_scale * self.base(x)
 
 
 class GRU(eqx.Module):

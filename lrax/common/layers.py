@@ -271,6 +271,26 @@ class VBLL(eqx.Module):
         variance = self.epistemic_variance(x) + self.noise_variance
         return mean, variance
 
+    def sample(self, x: Array, *, key: PRNGKeyArray, noise: bool = True) -> Array:
+        """Draw one reparameterised sample from the predictive distribution.
+
+        Parameters
+        ----------
+        - `x`: The feature vector with shape `(in_features,)`.
+        - `key`: A `jax.random.key` for the predictive noise. (Keyword only argument.)
+        - `noise`: Whether to include the observation-noise term. Set `False` to sample
+            only the epistemic weight-posterior uncertainty. Defaults to `True`.
+
+        Returns
+        -------
+        A JAX array with shape `(out_features,)`.
+        """
+        mean = self.mean_weight @ x
+        variance = self.epistemic_variance(x)
+        if noise:
+            variance = variance + self.noise_variance
+        return mean + jnp.sqrt(variance) * jr.normal(key, mean.shape)
+
     def log_likelihood(self, x: Array, y: Array) -> Array:
         """The expected log-likelihood of `y` under the weight posterior (the ELBO data
         term)."""
