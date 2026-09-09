@@ -18,7 +18,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import Literal
 
 import equinox as eqx
@@ -26,8 +26,9 @@ import jax
 import jax.nn as jnn
 import jax.numpy as jnp
 import jax.random as jr
+import jax.tree_util as jtu
 from equinox.internal import doc_repr
-from jaxtyping import Array, PRNGKeyArray
+from jaxtyping import Array, PRNGKeyArray, PyTree
 
 from .activations import lipswish
 from .layers import VBLL
@@ -506,3 +507,143 @@ class LSTM(eqx.Module):
 
         h_n, output = jax.lax.scan(scan_fn, h_0, x)
         return output, h_n
+
+
+class WrapEnsemble[M: eqx.Module](eqx.Module):
+    """Wraps a sequence of models and evaluates them together as an ensemble."""
+
+    models: Sequence[M]
+
+    def __post_init__(self):
+        assert len(self.models) > 0, "`models` must contain at least one model."
+        model_type = type(self.models[0])
+        all_same = all(type(model) is model_type for model in self.models)
+        assert all_same, "All models in `models` must be of the same type."
+
+    def __call__(self, *args, **kwargs) -> PyTree[Array]:
+        """Evaluate every member on the same input and stack the results.
+
+        Parameters
+        ----------
+        - `*args`, `**kwargs`: Forwarded unchanged to each member's ``__call__``.
+
+        Returns
+        -------
+        The members' outputs stacked along a leading axis of size `len(models)`.
+
+        Notes
+        -----
+        If you need any statistics on the model predictions, it's cheaper to perform
+        these statistics on the model outputs explicitly (which is why they aren't
+        implemented internally). For example,
+        ```python
+        >>> outputs = ensemble(x)
+        >>> WrapEnsemble.mean(outputs)
+        ```
+        """
+        outputs = [model(*args, **kwargs) for model in self.models]  # type: ignore
+        return jtu.tree_map(lambda *out: jnp.stack(out), *outputs)
+
+    def __len__(self) -> int:
+        return len(self.models)
+
+    def __iter__(self):
+        yield from self.models
+
+    def __getitem__(self, index: int | slice) -> "M | WrapEnsemble[M]":
+        if isinstance(index, slice):
+            return WrapEnsemble(self.models[index])
+        return self.models[index]
+
+    @staticmethod
+    def mean(outputs: PyTree[Array]) -> PyTree[Array]:
+        """The mean of `outputs` over the ensemble axis.
+
+        Parameters
+        ----------
+        - `outputs`: A stacked output from `__call__`, i.e. a pytree whose leaves have
+            a leading axis of size `len(models)`.
+
+        Returns
+        -------
+        A pytree matching a single member's output, each leaf averaged over the members.
+        """
+        return jtu.tree_map(lambda out: jnp.mean(out, axis=0), outputs)
+
+    @staticmethod
+    def std(outputs: PyTree[Array]) -> PyTree[Array]:
+        """The standard deviation of `outputs` over the ensemble axis.
+
+        This is the usual ensemble-disagreement measure of epistemic uncertainty.
+
+        Parameters
+        ----------
+        - `outputs`: A stacked output from `__call__`, i.e. a pytree whose leaves have
+            a leading axis of size `len(models)`.
+
+        Returns
+        -------
+        A pytree matching a single member's output, each leaf's spread over the members.
+        """
+        return jtu.tree_map(lambda out: jnp.std(out, axis=0), outputs)
+
+    @staticmethod
+    def min(outputs: PyTree[Array]) -> PyTree[Array]:
+        """The elementwise minimum of `outputs` over the ensemble axis.
+
+        Parameters
+        ----------
+        - `outputs`: A stacked output from `__call__`, i.e. a pytree whose leaves have
+            a leading axis of size `len(models)`.
+
+        Returns
+        -------
+        A pytree matching a single member's output, each leaf reduced over the members.
+        """
+        return jtu.tree_map(lambda out: jnp.min(out, axis=0), outputs)
+
+    @staticmethod
+    def max(outputs: PyTree[Array]) -> PyTree[Array]:
+        """The elementwise maximum of `outputs` over the ensemble axis.
+
+        Parameters
+        ----------
+        - `outputs`: A stacked output from `__call__`, i.e. a pytree whose leaves have
+            a leading axis of size `len(models)`.
+
+        Returns
+        -------
+        A pytree matching a single member's output, each leaf reduced over the members.
+        """
+        return jtu.tree_map(lambda out: jnp.max(out, axis=0), outputs)
+
+    def select(self, indices: Sequence[int]) -> "WrapEnsemble[M]":
+        return WrapEnsemble([self.models[i] for i in indices])
+
+    def subsample(
+        self,
+        outputs: PyTree[Array],
+        num_members: int,
+        *,
+        key: PRNGKeyArray,
+        replace: bool = False,
+    ) -> PyTree[Array]:
+        """Draw a random subset of the ensemble axis from an already-computed output.
+
+        Parameters
+        ----------
+        - `outputs`: A stacked output from `__call__`, i.e. a pytree whose leaves have a
+            leading axis of size `num_models`.
+        - `num_members`: The number of members to keep.
+        - `key`: A `jax.random.key` used to provide randomness for the subset draw.
+            (Keyword only argument.)
+        - `replace`: Whether to sample the members with replacement. Defaults to
+            `False`.
+
+        Returns
+        -------
+        A pytree matching `outputs` with each leaf's leading axis reduced to
+        `num_members`.
+        """
+        indices = jr.choice(key, len(self.models), (num_members,), replace=replace)
+        return jtu.tree_map(lambda out: out[indices], outputs)
