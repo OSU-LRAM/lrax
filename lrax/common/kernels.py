@@ -49,7 +49,7 @@ def _radius(
     return jnp.where(positive, safe ** (order / 2.0), 0.0)
 
 
-def exponential_kernel(
+def exponential(
     x: P,
     y: P,
     sigma: ArrayLike = 1.0,
@@ -91,7 +91,7 @@ def exponential_kernel(
     return jnp.exp(-_radius(x, y, sigma, distance, order))
 
 
-def energy_kernel(
+def energy(
     x: P,
     y: P,
     sigma: ArrayLike = 1.0,
@@ -131,7 +131,45 @@ def energy_kernel(
     return -_radius(x, y, sigma, distance, order)
 
 
-def gaussian_kernel(
+def crps(
+    x: P,
+    y: P,
+    sigma: ArrayLike = 1.0,
+    *,
+    distance: DistanceFn = _euclidean,
+) -> Scalar:
+    r"""Continuous ranked probability score kernel.
+
+    .. math::
+
+        k(x, y) = -\sum_{i}\left|\frac{d_{i}(x, y)}{\sigma_{i}}\right|
+
+    where :math:`d_{i}` is the :math:`i`th coordinate of the distance function and
+    :math:`\sigma` are the bandwidths. This is the kernel for which the kernel score
+    reduces to the continuous ranked probability score, summed over the coordinates of
+    the observation. It is `energy_kernel` at an order of one with the coordinates
+    gathered in the Manhattan norm rather than the Euclidean one, so the two agree for
+    a scalar observation and differ for a multivariate one.
+
+    Parameters
+    ----------
+    - `x`: The first sample.
+    - `y`: The second sample, with the same tree structure as `x`.
+    - `sigma`: The bandwidths, in the units of the distance. Either a scalar or an
+        array matching the output of `distance`, weighting the contribution of each
+        coordinate to the sum.
+    - `distance`: The distance between `x` and `y`, returning either a scalar or an
+        array of coordinates. `distance` is generic as to avoid interpreting `x` and `y`
+        as elements of a vector space. Defaults to the Euclidean distance.
+
+    Returns
+    -------
+    The scalar kernel value, in `(-inf, 0]`.
+    """
+    return -jnp.sum(jnp.abs(distance(x, y) / sigma))
+
+
+def gaussian(
     x: P,
     y: P,
     sigma: ArrayLike = 1.0,
@@ -168,7 +206,7 @@ def gaussian_kernel(
     return jnp.exp(-0.5 * _squared_radius(x, y, sigma, distance))
 
 
-def rational_quadratic_kernel(
+def rational_quadratic(
     x: P,
     y: P,
     sigma: ArrayLike = 1.0,
@@ -210,7 +248,7 @@ def rational_quadratic_kernel(
     return jnp.exp(-alpha * jnp.log1p(squared / (2.0 * alpha)))  # type: ignore
 
 
-def inverse_multiquadric_kernel(
+def inverse_multiquadric(
     x: P,
     y: P,
     sigma: ArrayLike = 1.0,
@@ -250,7 +288,7 @@ def inverse_multiquadric_kernel(
     return jnp.exp(-beta * jnp.log1p(_squared_radius(x, y, sigma, distance)))  # type: ignore
 
 
-def matern_kernel(
+def matern(
     x: P,
     y: P,
     sigma: ArrayLike = 1.0,
@@ -293,10 +331,6 @@ def matern_kernel(
     Returns
     -------
     The scalar kernel value, in `(0, 1]`.
-
-    Raises
-    ------
-    A `ValueError` if `nu` is not one of the supported half-integers.
     """
     radius = _radius(x, y, sigma, distance)
 
@@ -336,10 +370,6 @@ def mixture(
     Returns
     -------
     The mixed kernel, taking two samples and returning a scalar.
-
-    Raises
-    ------
-    A `ValueError` if `weights` does not hold one weight for each rung of the ladder.
     """
     rungs = jnp.shape(sigma)[0]
 
@@ -385,10 +415,6 @@ def gram(
     -------
     The Gram matrix, whose `(i, j)` entry is the kernel at the `i`th member of `xs` and
     the `j`th member of `ys`.
-
-    Raises
-    ------
-    A `ValueError` if `batch_size` is not positive.
     """
 
     def row(x: P) -> Float[Array, " m"]:
