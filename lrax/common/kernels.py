@@ -25,25 +25,22 @@ from typing import Literal
 import jax
 import jax.numpy as jnp
 from equinox.internal import doc_repr
-from jaxtyping import Array, ArrayLike, Float, PyTree, Scalar, ScalarLike, Shaped
+from jaxtyping import Array, ArrayLike, Float, Scalar, ScalarLike, Shaped
+
+from .._custom_types import DistanceFn, Kernel, P
 
 _euclidean = doc_repr(lambda x, y: x - y, "<euclidean distance>")
 
-_P = PyTree[Shaped[ArrayLike, "?*p"], "P"]
-_Kernel = Callable[[_P, _P], Scalar]
 
-
-def _squared_radius[P](
-    x: P, y: P, sigma: ArrayLike, distance: Callable[[P, P], Array]
-) -> Scalar:
+def _squared_radius(x: P, y: P, sigma: ArrayLike, distance: DistanceFn) -> Scalar:
     return jnp.sum((distance(x, y) / sigma) ** 2)
 
 
-def _radius[P](
+def _radius(
     x: P,
     y: P,
     sigma: ArrayLike,
-    distance: Callable[[P, P], Array],
+    distance: DistanceFn,
     order: ScalarLike = 1.0,
 ) -> Scalar:
     squared = _squared_radius(x, y, sigma, distance)
@@ -52,13 +49,13 @@ def _radius[P](
     return jnp.where(positive, safe ** (order / 2.0), 0.0)
 
 
-def exponential_kernel[P](
+def exponential_kernel(
     x: P,
     y: P,
     sigma: ArrayLike = 1.0,
     order: ScalarLike = 1.0,
     *,
-    distance: Callable[[P, P], Array] = _euclidean,
+    distance: DistanceFn = _euclidean,
 ) -> Scalar:
     r"""Exponential kernel.
 
@@ -76,8 +73,8 @@ def exponential_kernel[P](
 
     Parameters
     ----------
-    - `x`: The first point.
-    - `y`: The second point, matching the structure of `x`.
+    - `x`: The first sample.
+    - `y`: The second sample, with the same tree structure as `x`.
     - `sigma`: The bandwidths, in the units of the distance. Either a scalar or an
         array matching the output of `distance`, giving each coordinate its own
         bandwidth.
@@ -94,13 +91,13 @@ def exponential_kernel[P](
     return jnp.exp(-_radius(x, y, sigma, distance, order))
 
 
-def energy_kernel[P](
+def energy_kernel(
     x: P,
     y: P,
     sigma: ArrayLike = 1.0,
     order: ScalarLike = 1.0,
     *,
-    distance: Callable[[P, P], Array] = _euclidean,
+    distance: DistanceFn = _euclidean,
 ) -> Scalar:
     r"""Energy kernel.
 
@@ -117,14 +114,12 @@ def energy_kernel[P](
 
     Parameters
     ----------
-    - `x`: The first point.
-    - `y`: The second point, matching the structure of `x`.
+    - `x`: The first sample.
+    - `y`: The second sample, with the same tree structure as `x`.
     - `sigma`: The bandwidths, in the units of the distance. Either a scalar or an
         array matching the output of `distance`, giving each coordinate its own
         bandwidth.
-    - `order`: The exponent applied to the radius. The kernel is conditionally
-        negative definite for orders in `(0, 2]`, and the score it induces is
-        degenerate at exactly two, where it compares only the means.
+    - `order`: The exponent applied to the radius.
     - `distance`: The distance between `x` and `y`, returning either a scalar or an
         array of coordinates. `distance` is generic as to avoid interpreting `x` and `y`
         as elements of a vector space. Defaults to the Euclidean distance.
@@ -136,12 +131,12 @@ def energy_kernel[P](
     return -_radius(x, y, sigma, distance, order)
 
 
-def gaussian_kernel[P](
+def gaussian_kernel(
     x: P,
     y: P,
     sigma: ArrayLike = 1.0,
     *,
-    distance: Callable[[P, P], Array] = _euclidean,
+    distance: DistanceFn = _euclidean,
 ) -> Scalar:
     r"""Gaussian kernel, also known as the radial basis function (RBF) kernel or
     automatic-relevance determination kernel (ARD) kernel for non-scalar bandwidths.
@@ -157,8 +152,8 @@ def gaussian_kernel[P](
 
     Parameters
     ----------
-    - `x`: The first point.
-    - `y`: The second point, matching the structure of `x`.
+    - `x`: The first sample.
+    - `y`: The second sample, with the same tree structure as `x`.
     - `sigma`: The bandwidths, in the units of the distance. Either a scalar or an
         array matching the output of `distance`, giving each coordinate its own
         bandwidth.
@@ -173,13 +168,13 @@ def gaussian_kernel[P](
     return jnp.exp(-0.5 * _squared_radius(x, y, sigma, distance))
 
 
-def rational_quadratic_kernel[P](
+def rational_quadratic_kernel(
     x: P,
     y: P,
     sigma: ArrayLike = 1.0,
     alpha: ScalarLike = 1.0,
     *,
-    distance: Callable[[P, P], Array] = _euclidean,
+    distance: DistanceFn = _euclidean,
 ) -> Scalar:
     r"""Rational quadratic kernel.
 
@@ -196,8 +191,8 @@ def rational_quadratic_kernel[P](
 
     Parameters
     ----------
-    - `x`: The first point.
-    - `y`: The second point, matching the structure of `x`.
+    - `x`: The first sample.
+    - `y`: The second sample, with the same pytree structure as `x`.
     - `sigma`: The bandwidths, in the units of the distance. Either a scalar or an
         array matching the output of `distance`, giving each coordinate its own
         bandwidth.
@@ -215,13 +210,13 @@ def rational_quadratic_kernel[P](
     return jnp.exp(-alpha * jnp.log1p(squared / (2.0 * alpha)))  # type: ignore
 
 
-def inverse_multiquadric_kernel[P](
+def inverse_multiquadric_kernel(
     x: P,
     y: P,
     sigma: ArrayLike = 1.0,
     beta: ScalarLike = 0.5,
     *,
-    distance: Callable[[P, P], Array] = _euclidean,
+    distance: DistanceFn = _euclidean,
 ) -> Scalar:
     r"""Inverse multiquadric kernel.
 
@@ -238,8 +233,8 @@ def inverse_multiquadric_kernel[P](
 
     Parameters
     ----------
-    - `x`: The first point.
-    - `y`: The second point, matching the structure of `x`.
+    - `x`: The first sample.
+    - `y`: The second sample, matching the structure of `x`.
     - `sigma`: The bandwidths, in the units of the distance. Either a scalar or an
         array matching the output of `distance`, giving each coordinate its own
         bandwidth.
@@ -255,13 +250,13 @@ def inverse_multiquadric_kernel[P](
     return jnp.exp(-beta * jnp.log1p(_squared_radius(x, y, sigma, distance)))  # type: ignore
 
 
-def matern_kernel[P](
+def matern_kernel(
     x: P,
     y: P,
     sigma: ArrayLike = 1.0,
     nu: Literal["1/2", "3/2", "5/2"] = "3/2",
     *,
-    distance: Callable[[P, P], Array] = _euclidean,
+    distance: DistanceFn = _euclidean,
 ) -> Scalar:
     r"""Matern kernel.
 
@@ -283,8 +278,8 @@ def matern_kernel[P](
 
     Parameters
     ----------
-    - `x`: The first point.
-    - `y`: The second point, matching the structure of `x`.
+    - `x`: The first sample.
+    - `y`: The second sample, matching the structure of `x`.
     - `sigma`: The bandwidths, in the units of the distance. Either a scalar or an
         array matching the output of `distance`, giving each coordinate its own
         bandwidth.
@@ -318,11 +313,11 @@ def matern_kernel[P](
             raise ValueError(f'`nu` should either be "1/2", "3/2", or "5/2". Got {nu}.')
 
 
-def mixture[P](
-    kernel: Callable[..., Scalar],
+def mixture(
+    kernel: Callable[[P, P, Float[ArrayLike, "?*sigma"]], Scalar],
     sigma: Float[ArrayLike, "scales ?*sigma"],
     weights: Float[ArrayLike, " scales"] | None = None,
-) -> Callable[[P, P], Scalar]:
+) -> Kernel:
     r"""Mix a kernel over a ladder of bandwidths.
 
     .. math::
@@ -340,7 +335,7 @@ def mixture[P](
 
     Returns
     -------
-    The mixed kernel, taking two points and returning a scalar.
+    The mixed kernel, taking two samples and returning a scalar.
 
     Raises
     ------
@@ -369,9 +364,9 @@ def mixture[P](
 
 
 def gram(
-    kernel: _Kernel,
-    xs: Shaped[_P, "n"],
-    ys: Shaped[_P, "m"],
+    kernel: Kernel,
+    xs: Shaped[P, "n"],
+    ys: Shaped[P, "m"],
     *,
     batch_size: int | None = None,
 ) -> Float[Array, "n m"]:
@@ -379,7 +374,7 @@ def gram(
 
     Parameters
     ----------
-    - `kernel`: The kernel applied to a single pair of points.
+    - `kernel`: The kernel applied to a single pair of samples.
     - `xs`: The first set of samples, with a leading sample axis on each leaf.
     - `ys`: The second set of samples, matching the structure of `xs`.
     - `batch_size`: How many rows to form at a time, or `None` to form them all at
@@ -396,7 +391,7 @@ def gram(
     A `ValueError` if `batch_size` is not positive.
     """
 
-    def row(x: _P) -> Float[Array, " m"]:
+    def row(x: P) -> Float[Array, " m"]:
         return jax.vmap(kernel, in_axes=(None, 0))(x, ys)
 
     if batch_size is None:
