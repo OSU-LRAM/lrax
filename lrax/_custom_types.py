@@ -18,9 +18,15 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
+from collections.abc import Callable
+
 import optax
-from jaxtyping import PyTree, ScalarLike
+from jaxtyping import Array, ArrayLike, PyTree, Scalar, ScalarLike, Shaped
 
 type Metrics = dict[str, ScalarLike]
 type Optimizer = optax.GradientTransformation | optax.GradientTransformationExtraArgs
 type Optimizers = PyTree[Optimizer]
+
+type P = PyTree[Shaped[ArrayLike, "?*s"], "S"]  # type: ignore
+type DistanceFn = Callable[[P, P], Array]
+type Kernel = Callable[[P, P], Scalar]
