@@ -22,47 +22,21 @@ import math
 from collections.abc import Callable
 from typing import Literal
 
+import jax
 import jax.numpy as jnp
 from equinox.internal import doc_repr
-from jaxtyping import Array, ArrayLike, Scalar, ScalarLike
+from jaxtyping import Array, ArrayLike, Float, PyTree, Scalar, ScalarLike, Shaped
 
 _euclidean = doc_repr(lambda x, y: x - y, "<euclidean distance>")
+
+_P = PyTree[Shaped[ArrayLike, "?*p"], "P"]
+_Kernel = Callable[[_P, _P], Scalar]
 
 
 def _squared_radius[P](
     x: P, y: P, sigma: ArrayLike, distance: Callable[[P, P], Array]
 ) -> Scalar:
-    """Squared radius between two points, under a distance and its bandwidths.
-
-    Parameters
-    ----------
-    - `x`: The first point.
-    - `y`: The second point, matching the structure of `x`.
-    - `sigma`: The bandwidths, broadcastable against the output of `distance`.
-    - `distance`: The distance between `x` and `y`.
-
-    Returns
-    -------
-    The scalar sum of the squared, scaled coordinates.
-
-    Raises
-    ------
-    A `ValueError` if `sigma` adds an axis to the output of `distance`.
-    """
-    coordinates = distance(x, y)
-    distance_shape = jnp.shape(coordinates)
-    sigma_shape = jnp.shape(sigma)
-
-    if jnp.broadcast_shapes(distance_shape, sigma_shape) != distance_shape:
-        raise ValueError(
-            "`sigma` must broadcast against the output of `distance` without adding "
-            f"an axis. Got bandwidths with shape {sigma_shape} and a distance with "
-            f"shape {distance_shape}. If you are trying to score a ladder of "
-            "bandwidths at once then you should map over it, e.g. "
-            "`jax.vmap(kernel, in_axes=(None, None, 0))`."
-        )
-
-    return jnp.sum((coordinates / sigma) ** 2)
+    return jnp.sum((distance(x, y) / sigma) ** 2)
 
 
 def _radius[P](
@@ -72,24 +46,6 @@ def _radius[P](
     distance: Callable[[P, P], Array],
     order: ScalarLike = 1.0,
 ) -> Scalar:
-    """Radius between two points, raised to a power.
-
-    The radius is masked where it vanishes so that the square root is never
-    differentiated at zero, which happens on the diagonal of a Gram matrix. This keeps
-    the diagonal exact and its gradient zero for any positive `order`.
-
-    Parameters
-    ----------
-    - `x`: The first point.
-    - `y`: The second point, matching the structure of `x`.
-    - `sigma`: The bandwidths, broadcastable against the output of `distance`.
-    - `distance`: The distance between `x` and `y`.
-    - `order`: The exponent applied to the radius.
-
-    Returns
-    -------
-    The scaled radius raised to `order`.
-    """
     squared = _squared_radius(x, y, sigma, distance)
     positive = squared > 0.0
     safe = jnp.where(positive, squared, 1.0)
@@ -360,3 +316,93 @@ def matern_kernel[P](
             return (1.0 + scaled + scaled**2 / 3.0) * jnp.exp(-scaled)
         case _:
             raise ValueError(f'`nu` should either be "1/2", "3/2", or "5/2". Got {nu}.')
+
+
+def mixture[P](
+    kernel: Callable[..., Scalar],
+    sigma: Float[ArrayLike, "scales ?*sigma"],
+    weights: Float[ArrayLike, " scales"] | None = None,
+) -> Callable[[P, P], Scalar]:
+    r"""Mix a kernel over a ladder of bandwidths.
+
+    .. math::
+
+        k(x, y) = \sum_{l} w_{l}\, k(x, y; \sigma_{l})
+
+    where :math:`\sigma_{l}` is the :math:`l`th rung of the ladder and :math:`w_{l}`
+    is its weight.
+
+    Parameters
+    ----------
+    - `kernel`: The kernel to mix.
+    - `sigma`: The ladder of bandwidths.
+    - `weights`: The weight of each rung. Defaults to weighting the rungs equally.
+
+    Returns
+    -------
+    The mixed kernel, taking two points and returning a scalar.
+
+    Raises
+    ------
+    A `ValueError` if `weights` does not hold one weight for each rung of the ladder.
+    """
+    rungs = jnp.shape(sigma)[0]
+
+    if weights is not None and jnp.shape(weights) != (rungs,):
+        raise ValueError(
+            "`weights` must hold one weight for each rung of the ladder. Got weights "
+            f"with shape {jnp.shape(weights)} and a ladder with {rungs} rungs."
+        )
+
+    def mixed(x: P, y: P) -> Scalar:
+        def rung(bandwidths: Float[ArrayLike, "?*sigma"]) -> Scalar:
+            return kernel(x, y, bandwidths)
+
+        values = jax.vmap(rung)(sigma)
+
+        if weights is None:
+            return jnp.mean(values)
+
+        return jnp.sum(weights * values)
+
+    return mixed
+
+
+def gram(
+    kernel: _Kernel,
+    xs: Shaped[_P, "n"],
+    ys: Shaped[_P, "m"],
+    *,
+    batch_size: int | None = None,
+) -> Float[Array, "n m"]:
+    """Evaluate a kernel on every pair drawn from two sets of samples.
+
+    Parameters
+    ----------
+    - `kernel`: The kernel applied to a single pair of points.
+    - `xs`: The first set of samples, with a leading sample axis on each leaf.
+    - `ys`: The second set of samples, matching the structure of `xs`.
+    - `batch_size`: How many rows to form at a time, or `None` to form them all at
+        once. This generally should be left as `None`, but you can play with this if you
+        are running into memory issues. Keyword-only argument.
+
+    Returns
+    -------
+    The Gram matrix, whose `(i, j)` entry is the kernel at the `i`th member of `xs` and
+    the `j`th member of `ys`.
+
+    Raises
+    ------
+    A `ValueError` if `batch_size` is not positive.
+    """
+
+    def row(x: _P) -> Float[Array, " m"]:
+        return jax.vmap(kernel, in_axes=(None, 0))(x, ys)
+
+    if batch_size is None:
+        return jax.vmap(row)(xs)
+
+    if batch_size < 1:
+        raise ValueError(f"`batch_size` must be positive. Got {batch_size}.")
+
+    return jax.lax.map(jax.checkpoint(row), xs, batch_size=batch_size)
