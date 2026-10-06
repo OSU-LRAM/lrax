@@ -80,9 +80,6 @@ class SPD(eqx.Module):
         - `metric`: The positive function to apply to the eigenvalues. Defaults to
             `jax.nn.softplus`. To implement a Log-Euclidean Riemannian metric, this can
             be set to, `jnp.exp`.
-        - `scales`: A JAX array representing the pre-initialized scales to apply to the
-            predicted SPD matrix. If `None`, the scales are randomly initialized.
-            Defaults to `None`.
         - `key`: A `jax.random.key` used to provide randomness for parameter
             initialisation. (Keyword only argument.)
         """
@@ -111,8 +108,181 @@ class SPD(eqx.Module):
         U = U.at[i_lower, j_lower].set(off_diag)
         U = U.at[j_lower, i_lower].set(off_diag)
         V, w = jax.lax.linalg.eigh(U, sort_eigenvalues=False)
-        M = V @ jnp.diag(self.metric(w)) @ V.T
+        return V @ jnp.diag(self.metric(w)) @ V.T
+
+
+class StackedSPD(eqx.Module):
+    """Symmetric positive-definite network that predicts a stack of SPD matrices.
+
+    This network is designed so that multiple SPD matrix predictions can share features
+    (which can be useful when learning e.g. the quadratic drag for an underwater
+    vehicle). Each matrix in the stack can be either a full or a diagonal SPD matrix.
+    """
+
+    num_matrices: int = eqx.field(static=True)
+    size: int = eqx.field(static=True)
+    shape: tuple[int, ...] = eqx.field(static=True)
+    diagonal_mask: tuple[bool, ...] = eqx.field(static=True)
+    metric: Callable
+    mlp: eqx.nn.MLP
+
+    def __init__(
+        self,
+        in_size: int | Literal["scalar"],
+        num_matrices: int,
+        diag_size: int,
+        width_size: int,
+        depth: int,
+        activation: Callable = _lipswish,
+        final_activation: Callable = _identity,
+        metric: Callable = _softplus,
+        diagonal_mask: Sequence[bool] | None = None,
+        *,
+        key: PRNGKeyArray,
+    ):
+        """Initialize a stacked SPD network.
+
+        Parameters
+        ----------
+        - `in_size`: The input size. The input to the module should be a vector of
+            shape `(in_features,)`
+        - `num_matrices`: The number of SPD matrices to predict.
+        - `diag_size`: The diagonal size of each predicted matrix. The output from the
+            module will be an array of shape `(num_matrices, diag_size, diag_size)`.
+        - `width_size`: The size of each hidden layer.
+        - `depth`: The number of hidden layers, including the output layer.
+        - `activation`: The activation function after each hidden layer. Defaults to
+            `lipswish`.
+        - `final_activation`: The activation function after the output layer. Defaults
+            to the identity.
+        - `metric`: The positive function to apply to the eigenvalues. Defaults to
+            `jax.nn.softplus`. To implement a Log-Euclidean Riemannian metric, this can
+            be set to, `jnp.exp`.
+        - `diagonal_mask`: A sequence of `num_matrices` booleans marking which matrices
+            are diagonal. A diagonal matrix applies `metric` directly to `diag_size`
+            predicted entries. If `None`, every matrix is a full SPD matrix. Defaults
+            to `None`.
+        - `key`: A `jax.random.key` used to provide randomness for parameter
+            initialisation. (Keyword only argument.)
+        """
+        if diagonal_mask is None:
+            diagonal_mask = (False,) * num_matrices
+        assert len(diagonal_mask) == num_matrices, (
+            "`diagonal_mask` must have one entry per matrix."
+        )
+
+        self.num_matrices = num_matrices
+        self.size = int(diag_size * (diag_size + 1) / 2)
+        self.shape = (num_matrices, diag_size, diag_size)
+        self.diagonal_mask = tuple(bool(m) for m in diagonal_mask)
+        self.metric = metric
+
+        num_diagonal = sum(self.diagonal_mask)
+        num_full = num_matrices - num_diagonal
+        self.mlp = eqx.nn.MLP(
+            in_size,
+            num_full * self.size + num_diagonal * diag_size,
+            width_size,
+            depth,
+            activation,
+            final_activation,
+            key=key,
+        )
+
+    def __call__(self, x: Array) -> Array:
+        """Forward pass of the stacked SPD network.
+
+        Parameters
+        ----------
+        - `x`: A JAX array with shape `(in_size,)`.
+
+        Returns
+        -------
+        A JAX array with shape `(num_matrices, diag_size, diag_size)`.
+        """
+        full_idx = [i for i, diag in enumerate(self.diagonal_mask) if not diag]
+        diag_idx = [i for i, diag in enumerate(self.diagonal_mask) if diag]
+        x_full, x_diag = jnp.split(self.mlp(x), (len(full_idx) * self.size,))
+
+        @eqx.filter_vmap
+        def to_spd(y):
+            diag, off_diag = jnp.split(y, (self.shape[-1],), axis=-1)
+            i_lower, j_lower = jnp.tril_indices(self.shape[-1], -1)
+            U = jnp.diag(diag)
+            U = U.at[i_lower, j_lower].set(off_diag)
+            U = U.at[j_lower, i_lower].set(off_diag)
+            V, w = jax.lax.linalg.eigh(U, sort_eigenvalues=False)
+            return V @ jnp.diag(self.metric(w)) @ V.T
+
+        M = jnp.zeros(self.shape, x_full.dtype)
+        if full_idx:
+            M = M.at[jnp.array(full_idx)].set(to_spd(x_full.reshape(-1, self.size)))
+        if diag_idx:
+            diag = self.metric(x_diag.reshape(-1, self.shape[-1]))
+            M = M.at[jnp.array(diag_idx)].set(jax.vmap(jnp.diag)(diag))
         return M
+
+
+class PSD(eqx.Module):
+    """Symmetric positive-semidefinite network.
+
+    This uses an MLP to predict a lower-triangular (n, n) matrix `L` and returns
+    `L @ L.T`, which is PSD for any `L`.
+    """
+
+    size: int = eqx.field(static=True)
+    shape: tuple[int, ...] = eqx.field(static=True)
+    mlp: eqx.nn.MLP
+
+    def __init__(
+        self,
+        in_size: int | Literal["scalar"],
+        diag_size: int,
+        width_size: int,
+        depth: int,
+        activation: Callable = _lipswish,
+        final_activation: Callable = _identity,
+        *,
+        key: PRNGKeyArray,
+    ):
+        """Initialize a PSD network.
+
+        Parameters
+        ----------
+        - `in_size`: The input size. The input to the module should be a vector of
+            shape `(in_features,)`
+        - `diag_size`: The diagonal size of the predicted matrix. The output from the
+            module will be a matrix of shape `(diag_size, diag_size)`.
+        - `width_size`: The size of each hidden layer.
+        - `depth`: The number of hidden layers, including the output layer.
+        - `activation`: The activation function after each hidden layer. Defaults to
+            `lipswish`.
+        - `final_activation`: The activation function after the output layer. Defaults
+            to the identity.
+        - `key`: A `jax.random.key` used to provide randomness for parameter
+            initialisation. (Keyword only argument.)
+        """
+        self.size = int(diag_size * (diag_size + 1) / 2)
+        self.shape = (diag_size, diag_size)
+        self.mlp = eqx.nn.MLP(
+            in_size, self.size, width_size, depth, activation, final_activation, key=key
+        )
+
+    def __call__(self, x: Array) -> Array:
+        """Forward pass of the PSD network.
+
+        Parameters
+        ----------
+        - `x`: A JAX array with shape `(in_size,)`.
+
+        Returns
+        -------
+        A JAX array with shape `(diag_size, diag_size)`.
+        """
+        x = self.mlp(x)
+        i_lower, j_lower = jnp.tril_indices(self.shape[0])
+        L = jnp.zeros(self.shape, x.dtype).at[i_lower, j_lower].set(x)
+        return L @ L.T
 
 
 class BayesianMLP(eqx.Module):
