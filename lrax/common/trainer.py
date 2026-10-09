@@ -39,8 +39,6 @@ from .env import AbstractEnv
 from .logger import Logger
 from .policies import ActorCritic
 
-# takes either (model, batch, keys) or, when `filter_spec` is set, (diff_model,
-# static_model, batch, keys); returns ((loss, metrics), grads)
 type LossFn = Callable[..., tuple[tuple[ScalarLike, Metrics], PyTree]]
 
 
@@ -93,6 +91,7 @@ class ModelTrainer(BaseTrainer):
         filter_spec: PyTree[bool] | None = None,
         callbacks: Sequence[Callback] = (),
         is_multi_transform: bool = False,
+        pass_step: bool = False,
     ):
         """Train `model` on the data provided by `dm`.
 
@@ -103,8 +102,9 @@ class ModelTrainer(BaseTrainer):
         - `dm`: A `LightningDataModule` providing the training dataloader.
         - `loss_fn`: A callable that computes the loss and gradients for a batch. If
             `filter_spec` is set, it is called as `loss_fn(diff_model, static_model,
-            batch, keys)`; otherwise as `loss_fn(model, batch, keys)`. In both cases it
-            returns `((loss, metrics), grads)`.
+            batch, keys)`; otherwise as `loss_fn(model, batch, keys)`. If `pass_step`
+            is set, the global training step is appended to either call. In all cases
+            it returns `((loss, metrics), grads)`.
         - `optim`: The optax optimizer used to update the model's parameters.
         - `epochs`: The number of epochs to train for. Defaults to `25`. (Keyword only
             argument.)
@@ -118,6 +118,9 @@ class ModelTrainer(BaseTrainer):
         - `is_multi_transform`: Whether `optim` applies different optimizers to distinct
             parts of the model, requiring different `equinox` handling. Defaults to
             `False`. (Keyword only argument.)
+        - `pass_step`: Whether to pass the global training step to `loss_fn` as a
+            trailing integer array argument, e.g., to schedule the loss weights.
+            Defaults to `False`. (Keyword only argument.)
 
         Returns
         -------
@@ -132,15 +135,17 @@ class ModelTrainer(BaseTrainer):
             opt_state = optim.init(eqx.filter(model, eqx.is_inexact_array))
 
         @eqx.filter_jit
-        def make_training_step(_model, _opt_state, _batch, _keys):
+        def make_training_step(_model, _opt_state, _batch, _keys, _step):
+            args = (_batch, _keys, _step) if pass_step else (_batch, _keys)
+
             # the filter spec is used to partition a model into differentiable and
             # static components. this is used when we want to freeze certain parameters
             # during training
             if filter_spec is not None:
                 diff_model, static_model = eqx.partition(_model, filter_spec)
-                result, grads = loss_fn(diff_model, static_model, _batch, _keys)
+                result, grads = loss_fn(diff_model, static_model, *args)
             else:
-                result, grads = loss_fn(_model, _batch, _keys)
+                result, grads = loss_fn(_model, *args)
 
             loss, metrics = result
 
@@ -179,7 +184,10 @@ class ModelTrainer(BaseTrainer):
                 batch_size = jtu.tree_leaves(batch)[0].shape[0]
                 keys = jr.split(jr.fold_in(key, step), batch_size)
 
-                result = make_training_step(model, opt_state, batch, keys)
+                # pass the step as an array so that it doesn't trigger a recompile
+                result = make_training_step(
+                    model, opt_state, batch, keys, jnp.asarray(step)
+                )
                 loss, metrics, model, opt_state = result
 
                 if self.logger is not None:
