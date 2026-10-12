@@ -28,11 +28,11 @@ import jax.tree_util as jtu
 from jax.flatten_util import ravel_pytree
 from jaxtyping import Array, ArrayLike, Float, Scalar, ScalarLike, Shaped
 
-from .._custom_types import Kernel, P
+from ..typing import Kernel, Point
 from .kernels import gaussian
 
 
-def _get_sample_size(samples: Shaped[P, "samples"]) -> int:
+def _get_sample_size(samples: Shaped[Point, "samples"]) -> int:
     def check(path: jtu.KeyPath, leaf: ArrayLike) -> int:
         shape = jnp.shape(leaf)
 
@@ -72,11 +72,11 @@ def _map[X, Y](f: Callable[[X], Y], xs: X, batch_size: int | None) -> Y:
 
 def _total(
     kernel: Kernel,
-    xs: Shaped[P, "n"],
-    ys: Shaped[P, "m"],
+    xs: Shaped[Point, "n"],
+    ys: Shaped[Point, "m"],
     batch_size: int | None,
 ) -> Scalar:
-    def row(x: P) -> Scalar:
+    def row(x: Point) -> Scalar:
         return jnp.sum(jax.vmap(kernel, in_axes=(None, 0))(x, ys))
 
     return jnp.sum(_map(row, xs, batch_size))
@@ -84,7 +84,7 @@ def _total(
 
 def _within(
     kernel: Kernel,
-    xs: Shaped[P, "samples"],
+    xs: Shaped[Point, "samples"],
     unbiased: bool,
     batch_size: int | None,
 ) -> Scalar:
@@ -102,15 +102,15 @@ def _within(
     if not unbiased:
         return total / n**2
 
-    def alone(x: P) -> Scalar:
+    def alone(x: Point) -> Scalar:
         return kernel(x, x)
 
     return (total - jnp.sum(_map(alone, xs, batch_size))) / (n * (n - 1))
 
 
 def kernel(
-    observation: P,
-    forecasts: Shaped[P, "samples"],
+    observation: Point,
+    forecasts: Shaped[Point, "samples"],
     kernel: Kernel = gaussian,
     *,
     unbiased: bool = True,
@@ -137,7 +137,7 @@ def kernel(
     strictly proper.
     """
 
-    def against(x: P) -> Scalar:
+    def against(x: Point) -> Scalar:
         return kernel(x, observation)
 
     spread = _within(kernel, forecasts, unbiased, batch_size)
@@ -147,8 +147,8 @@ def kernel(
 
 
 def mmd(
-    observations: Shaped[P, "n"],
-    forecasts: Shaped[P, "m"],
+    observations: Shaped[Point, "n"],
+    forecasts: Shaped[Point, "m"],
     kernel: Kernel = gaussian,
     *,
     unbiased: bool = True,
@@ -194,8 +194,8 @@ def mmd(
 
 
 def variogram(
-    observation: P,
-    forecasts: Shaped[P, "samples"],
+    observation: Point,
+    forecasts: Shaped[Point, "samples"],
     order: ScalarLike = 0.5,
     weights: Float[Array, "d d"] | None = None,
 ) -> Scalar:

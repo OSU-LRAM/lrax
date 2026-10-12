@@ -18,8 +18,6 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-from collections.abc import Callable
-
 import equinox as eqx
 import jax.nn as jnn
 import jax.numpy as jnp
@@ -28,6 +26,7 @@ from equinox.internal import doc_repr
 from jaxtyping import Array, PRNGKeyArray
 
 from ..common.policies import ContinuousCritic
+from ..typing import Activation
 
 _identity = doc_repr(lambda x: x, "lambda x: x")
 _elu = doc_repr(jnn.elu, "<function elu>")
@@ -47,8 +46,8 @@ class Actor(eqx.Module):
         act_size: int,
         width_size: int,
         depth: int,
-        activation: Callable = _elu,
-        final_activation: Callable = _identity,
+        activation: Activation = _elu,
+        final_activation: Activation = _identity,
         log_std_min: float = -20.0,
         log_std_max: float = 2.0,
         *,
@@ -159,8 +158,8 @@ class ActorCritic(eqx.Module):
         width_size: int,
         depth: int,
         num_critics: int = 2,
-        activation: Callable = _elu,
-        final_activation: Callable = _identity,
+        activation: Activation = _elu,
+        final_activation: Activation = _identity,
         log_std_min: float = -20.0,
         log_std_max: float = 2.0,
         init_log_alpha: float = 0.0,

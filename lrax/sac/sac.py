@@ -29,11 +29,11 @@ from jax import lax
 from jaxtyping import Array, PRNGKeyArray, PyTree
 from optax import OptState
 
-from .._custom_types import Metrics, Optimizer
 from ..common.algorithm import AbstractAlgorithm
 from ..common.buffers import ReplayBuffer, Transition
 from ..common.env import AbstractEnv, EnvState
 from ..common.policies import ContinuousCritic
+from ..typing import Metrics, Optimizer
 from .policies import ActorCritic
 
 type _AlgState = tuple[ContinuousCritic, ReplayBuffer]

@@ -27,18 +27,20 @@ import jax.numpy as jnp
 from equinox.internal import doc_repr
 from jaxtyping import Array, ArrayLike, Float, Scalar, ScalarLike, Shaped
 
-from .._custom_types import DistanceFn, Kernel, P
+from ..typing import DistanceFn, Kernel, Point
 
 _euclidean = doc_repr(lambda x, y: x - y, "<euclidean distance>")
 
 
-def _squared_radius(x: P, y: P, sigma: ArrayLike, distance: DistanceFn) -> Scalar:
+def _squared_radius(
+    x: Point, y: Point, sigma: ArrayLike, distance: DistanceFn
+) -> Scalar:
     return jnp.sum((distance(x, y) / sigma) ** 2)
 
 
 def _radius(
-    x: P,
-    y: P,
+    x: Point,
+    y: Point,
     sigma: ArrayLike,
     distance: DistanceFn,
     order: ScalarLike = 1.0,
@@ -50,8 +52,8 @@ def _radius(
 
 
 def exponential(
-    x: P,
-    y: P,
+    x: Point,
+    y: Point,
     sigma: ArrayLike = 1.0,
     order: ScalarLike = 1.0,
     *,
@@ -92,8 +94,8 @@ def exponential(
 
 
 def energy(
-    x: P,
-    y: P,
+    x: Point,
+    y: Point,
     sigma: ArrayLike = 1.0,
     order: ScalarLike = 1.0,
     *,
@@ -132,8 +134,8 @@ def energy(
 
 
 def crps(
-    x: P,
-    y: P,
+    x: Point,
+    y: Point,
     sigma: ArrayLike = 1.0,
     *,
     distance: DistanceFn = _euclidean,
@@ -170,8 +172,8 @@ def crps(
 
 
 def gaussian(
-    x: P,
-    y: P,
+    x: Point,
+    y: Point,
     sigma: ArrayLike = 1.0,
     *,
     distance: DistanceFn = _euclidean,
@@ -207,8 +209,8 @@ def gaussian(
 
 
 def rational_quadratic(
-    x: P,
-    y: P,
+    x: Point,
+    y: Point,
     sigma: ArrayLike = 1.0,
     alpha: ScalarLike = 1.0,
     *,
@@ -249,8 +251,8 @@ def rational_quadratic(
 
 
 def inverse_multiquadric(
-    x: P,
-    y: P,
+    x: Point,
+    y: Point,
     sigma: ArrayLike = 1.0,
     beta: ScalarLike = 0.5,
     *,
@@ -289,8 +291,8 @@ def inverse_multiquadric(
 
 
 def matern(
-    x: P,
-    y: P,
+    x: Point,
+    y: Point,
     sigma: ArrayLike = 1.0,
     nu: Literal["1/2", "3/2", "5/2"] = "3/2",
     *,
@@ -348,7 +350,7 @@ def matern(
 
 
 def mixture(
-    kernel: Callable[[P, P, Float[ArrayLike, "?*sigma"]], Scalar],
+    kernel: Callable[[Point, Point, Float[ArrayLike, "?*sigma"]], Scalar],
     sigma: Float[ArrayLike, "scales ?*sigma"],
     weights: Float[ArrayLike, " scales"] | None = None,
 ) -> Kernel:
@@ -379,7 +381,7 @@ def mixture(
             f"with shape {jnp.shape(weights)} and a ladder with {rungs} rungs."
         )
 
-    def mixed(x: P, y: P) -> Scalar:
+    def mixed(x: Point, y: Point) -> Scalar:
         def rung(bandwidths: Float[ArrayLike, "?*sigma"]) -> Scalar:
             return kernel(x, y, bandwidths)
 
@@ -395,8 +397,8 @@ def mixture(
 
 def gram(
     kernel: Kernel,
-    xs: Shaped[P, "n"],
-    ys: Shaped[P, "m"],
+    xs: Shaped[Point, "n"],
+    ys: Shaped[Point, "m"],
     *,
     batch_size: int | None = None,
 ) -> Float[Array, "n m"]:
@@ -417,7 +419,7 @@ def gram(
     the `j`th member of `ys`.
     """
 
-    def row(x: P) -> Float[Array, " m"]:
+    def row(x: Point) -> Float[Array, " m"]:
         return jax.vmap(kernel, in_axes=(None, 0))(x, ys)
 
     if batch_size is None:

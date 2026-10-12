@@ -18,7 +18,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, assert_never
@@ -28,20 +28,16 @@ import jax.numpy as jnp
 import jax.random as jr
 import jax.tree_util as jtu
 import optax
-from jaxtyping import PRNGKeyArray, PyTree, ScalarLike
+from jaxtyping import PRNGKeyArray, PyTree
 from lightning.pytorch import LightningDataModule
 from tqdm import tqdm
 
-from .._custom_types import Metrics, Optimizer
+from ..typing import LossFn, Optimizer
 from .algorithm import AbstractAlgorithm
 from .callbacks import Callback, StopTraining
 from .env import AbstractEnv
 from .logger import Logger
 from .policies import ActorCritic
-
-# takes either (model, batch, keys) or, when `filter_spec` is set, (diff_model,
-# static_model, batch, keys); returns ((loss, metrics), grads)
-type LossFn = Callable[..., tuple[tuple[ScalarLike, Metrics], PyTree]]
 
 
 @dataclass
