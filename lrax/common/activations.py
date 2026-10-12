@@ -25,11 +25,12 @@ from jaxtyping import Array
 def lipswish(x: Array) -> Array:
     """LipSwish activation function.
 
-    LipSwish has been shown to perform well when applied to neural SDEs. Refer to the
-    following papers for additional information:
+    LipSwish has been shown to perform well when applied to neural SDEs. See:
 
-    - "Residual Flows for Invertible Generative Modeling" (https://arxiv.org/abs/1906.02735)
-    - "Efficient and Accurate Gradients for Neural SDEs" (https://arxiv.org/pdf/2105.13493)
+    - "Residual Flows for Invertible Generative Modeling", Ricky T. Q. Chen, Jens
+      Behrmann, David Duvenaud, and Jörn-Henrik Jacobsen.
+    - "Efficient and Accurate Gradients for Neural SDEs", Patrick Kidger, James Foster,
+      Xuechen Li, and Terry Lyons.
 
     Parameters
     ----------

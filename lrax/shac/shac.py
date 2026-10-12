@@ -141,7 +141,7 @@ class SHAC(AbstractAlgorithm):
 
     "Accelerated Policy Learning with Parallel Differentiable Simulation", Jie Xu,
     Viktor Makoviychuk, Yashraj Narang, Fabio Ramos, Wojciech Matusik, Animesh Garg,
-    Miles Macklin.
+    and Miles Macklin.
     """
 
     num_steps: int = 32

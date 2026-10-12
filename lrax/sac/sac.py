@@ -55,7 +55,7 @@ class SAC(AbstractAlgorithm):
     """Soft Actor-Critic.
 
     "Soft Actor-Critic: Off-Policy Maximum Entropy Deep Reinforcement Learning with a
-    Stochastic Actor", Tuomas Haarnoja, Aurick Zhou, Pieter Abbeel, Sergey Levine.
+    Stochastic Actor", Tuomas Haarnoja, Aurick Zhou, Pieter Abbeel, and Sergey Levine.
     """
 
     buffer_size: int = 1_000_000
