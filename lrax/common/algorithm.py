@@ -24,7 +24,7 @@ import equinox as eqx
 from jaxtyping import PRNGKeyArray, PyTree
 from optax import OptState
 
-from .._custom_types import Metrics, Optimizers
+from ..typing import Metrics, Optimizers
 from .env import AbstractEnv, EnvState
 
 type _AlgState = PyTree

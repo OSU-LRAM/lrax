@@ -31,11 +31,11 @@ from jax import lax
 from jaxtyping import Array, PRNGKeyArray, PyTree, ScalarLike
 from optax import OptState
 
-from .._custom_types import Metrics, Optimizer
 from .._epsilon import EPSILON
 from ..common.algorithm import AbstractAlgorithm
 from ..common.env import AbstractEnv, EnvState
 from ..common.normalizers import RunningMeanStd
+from ..typing import Metrics, Optimizer
 from .policies import ActorCritic, Critic
 
 

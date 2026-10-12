@@ -24,7 +24,7 @@ from typing import override
 import jax.numpy as jnp
 from jaxtyping import ScalarLike
 
-from .._custom_types import Metrics
+from ..typing import Metrics
 
 
 class StopTraining(Exception):

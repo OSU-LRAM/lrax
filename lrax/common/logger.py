@@ -27,7 +27,7 @@ from typing import Any
 import jax.tree_util as jtu
 import wandb
 
-from .._custom_types import Metrics
+from ..typing import Metrics
 
 
 class Logger(ABC):

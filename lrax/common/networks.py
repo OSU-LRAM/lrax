@@ -30,6 +30,7 @@ import jax.tree_util as jtu
 from equinox.internal import doc_repr
 from jaxtyping import Array, PRNGKeyArray, PyTree
 
+from ..typing import Activation
 from .activations import lipswish
 
 _tanh = doc_repr(jnn.tanh, "<function tanh>")
@@ -47,7 +48,7 @@ class SPD(eqx.Module):
 
     size: int = eqx.field(static=True)
     shape: tuple[int, ...] = eqx.field(static=True)
-    metric: Callable
+    metric: Callable[[Array], Array]
     mlp: eqx.nn.MLP
 
     def __init__(
@@ -56,9 +57,9 @@ class SPD(eqx.Module):
         diag_size: int,
         width_size: int,
         depth: int,
-        activation: Callable = _lipswish,
-        final_activation: Callable = _identity,
-        metric: Callable = _softplus,
+        activation: Activation = _lipswish,
+        final_activation: Activation = _identity,
+        metric: Callable[[Array], Array] = _softplus,
         *,
         key: PRNGKeyArray,
     ):
@@ -122,7 +123,7 @@ class StackedSPD(eqx.Module):
     size: int = eqx.field(static=True)
     shape: tuple[int, ...] = eqx.field(static=True)
     diagonal_mask: tuple[bool, ...] = eqx.field(static=True)
-    metric: Callable
+    metric: Callable[[Array], Array]
     mlp: eqx.nn.MLP
 
     def __init__(
@@ -132,9 +133,9 @@ class StackedSPD(eqx.Module):
         diag_size: int,
         width_size: int,
         depth: int,
-        activation: Callable = _lipswish,
-        final_activation: Callable = _identity,
-        metric: Callable = _softplus,
+        activation: Activation = _lipswish,
+        final_activation: Activation = _identity,
+        metric: Callable[[Array], Array] = _softplus,
         diagonal_mask: Sequence[bool] | None = None,
         *,
         key: PRNGKeyArray,
@@ -239,8 +240,8 @@ class PSD(eqx.Module):
         diag_size: int,
         width_size: int,
         depth: int,
-        activation: Callable = _lipswish,
-        final_activation: Callable = _identity,
+        activation: Activation = _lipswish,
+        final_activation: Activation = _identity,
         *,
         key: PRNGKeyArray,
     ):
@@ -299,8 +300,8 @@ class TamedMLP(eqx.Module):
         out_size: int | Literal["scalar"],
         width_size: int,
         depth: int,
-        activation: Callable = _lipswish,
-        final_activation: Callable = _tanh,
+        activation: Activation = _lipswish,
+        final_activation: Activation = _tanh,
         *,
         key: PRNGKeyArray,
     ):

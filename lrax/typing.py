@@ -27,6 +27,12 @@ type Metrics = dict[str, ScalarLike]
 type Optimizer = optax.GradientTransformation | optax.GradientTransformationExtraArgs
 type Optimizers = PyTree[Optimizer]
 
-type P = PyTree[Shaped[ArrayLike, "?*s"], "S"]  # type: ignore
-type DistanceFn = Callable[[P, P], Array]
-type Kernel = Callable[[P, P], Scalar]
+# takes either (model, batch, keys) or, when `filter_spec` is set, (diff_model,
+# static_model, batch, keys); returns ((loss, metrics), grads)
+type LossFn = Callable[..., tuple[tuple[ScalarLike, Metrics], PyTree]]
+
+type Activation = Callable[[Array], Array]
+
+type Point = PyTree[Shaped[ArrayLike, "?*s"], "S"]  # type: ignore
+type DistanceFn = Callable[[Point, Point], Array]
+type Kernel = Callable[[Point, Point], Scalar]
