@@ -70,7 +70,7 @@ def _compute_gae(
     """Calculate the advantages and returns using generalized advantage estimation.
 
     "High-Dimensional Continuous Control Using Generalized Advantage Estimation",
-    John Schulman, Philipp Moritz, Sergey Levine, Michael I. Jordan and Pieter Abbeel
+    John Schulman, Philipp Moritz, Sergey Levine, Michael I. Jordan, and Pieter Abbeel.
 
     Parameters
     ----------
@@ -140,7 +140,7 @@ class PPO(AbstractAlgorithm):
     """Proximal Policy Optimization.
 
     "Proximal Policy Optimization Algorithms", John Schulman, Filip Wolski, Prafulla
-    Dhariwal, Alec Radford, Oleg Klimov.
+    Dhariwal, Alec Radford, and Oleg Klimov.
 
     Notes
     -----
