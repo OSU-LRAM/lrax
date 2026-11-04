@@ -25,7 +25,6 @@ import jax
 import jax.nn as jnn
 import jax.numpy as jnp
 import jax.random as jr
-import jax.tree_util as jtu
 import optax
 from jax import lax
 from jaxtyping import Array, PRNGKeyArray, PyTree, ScalarLike
@@ -327,7 +326,7 @@ class SHAC(AbstractAlgorithm):
             dones=outputs.done,
             next_values=outputs.next_value,
             metrics={
-                **jtu.tree_map(jnp.mean, outputs.metrics),
+                **jax.tree.map(jnp.mean, outputs.metrics),
                 "mean_reward": jnp.mean(outputs.raw_reward),
                 "done_rate": jnp.mean(outputs.raw_done),
             },
@@ -382,7 +381,7 @@ class SHAC(AbstractAlgorithm):
         """
         params, static = eqx.partition(model, eqx.is_inexact_array)
 
-        batch_size = jtu.tree_leaves(batch)[0].shape[0]
+        batch_size = jax.tree.leaves(batch)[0].shape[0]
         minibatch_size = batch_size // self.num_minibatches
 
         loss_and_grad = eqx.filter_value_and_grad(self._critic_loss, has_aux=True)
@@ -404,8 +403,8 @@ class SHAC(AbstractAlgorithm):
         ) -> tuple[tuple[PyTree, OptState], Metrics]:
             params, opt_state = carry
             perm = jr.permutation(epoch_key, batch_size)
-            shuffled = jtu.tree_map(lambda x: x[perm], batch)
-            minibatches = jtu.tree_map(
+            shuffled = jax.tree.map(lambda x: x[perm], batch)
+            minibatches = jax.tree.map(
                 lambda x: x.reshape(self.num_minibatches, minibatch_size, *x.shape[1:]),
                 shuffled,
             )
@@ -418,7 +417,7 @@ class SHAC(AbstractAlgorithm):
         (params, opt_state), metrics = lax.scan(
             _epoch_step, (params, opt_state), epoch_keys
         )
-        metrics = jtu.tree_map(jnp.mean, metrics)
+        metrics = jax.tree.map(jnp.mean, metrics)
         model = eqx.combine(params, static)
         return model, opt_state, metrics
 
@@ -472,7 +471,7 @@ class SHAC(AbstractAlgorithm):
             alg_state.critic_target, eqx.is_inexact_array
         )
         critic_arrays, _ = eqx.partition(model.critic, eqx.is_inexact_array)
-        target_arrays = jtu.tree_map(
+        target_arrays = jax.tree.map(
             lambda t, c: self.target_alpha * t + (1.0 - self.target_alpha) * c,
             target_arrays,
             critic_arrays,

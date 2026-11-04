@@ -24,7 +24,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
-import jax.tree_util as jtu
+import jax
 import wandb
 
 from ..typing import Metrics
@@ -149,13 +149,13 @@ class MultiLogger(Logger):
         self.loggers = list(loggers)
 
     def log_hyperparams(self, params: dict[str, Any]) -> None:
-        jtu.tree_map(lambda logger: logger.log_hyperparams(params), self.loggers)
+        jax.tree.map(lambda logger: logger.log_hyperparams(params), self.loggers)
 
     def log_metrics(self, metrics: Metrics, step: int | None = None) -> None:
-        jtu.tree_map(lambda logger: logger.log_metrics(metrics, step), self.loggers)
+        jax.tree.map(lambda logger: logger.log_metrics(metrics, step), self.loggers)
 
     def cleanup(self) -> None:
-        jtu.tree_map(lambda logger: logger.cleanup(), self.loggers)
+        jax.tree.map(lambda logger: logger.cleanup(), self.loggers)
 
 
 class WandbLogger(Logger):

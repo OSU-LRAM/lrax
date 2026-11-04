@@ -27,7 +27,6 @@ import jax
 import jax.nn as jnn
 import jax.numpy as jnp
 import jax.random as jr
-import jax.tree_util as jtu
 from equinox.internal import doc_repr
 from jaxtyping import Array, ArrayLike, PRNGKeyArray, PyTree
 
@@ -592,7 +591,7 @@ class WrapEnsemble[M: eqx.Module](eqx.Module):
         ```
         """
         outputs = [model(*args, **kwargs) for model in self.models]  # type: ignore
-        return jtu.tree_map(lambda *out: jnp.stack(out), *outputs)
+        return jax.tree.map(lambda *out: jnp.stack(out), *outputs)
 
     def __len__(self) -> int:
         return len(self.models)
@@ -618,7 +617,7 @@ class WrapEnsemble[M: eqx.Module](eqx.Module):
         -------
         A pytree matching a single member's output, each leaf averaged over the members.
         """
-        return jtu.tree_map(lambda out: jnp.mean(out, axis=0), outputs)
+        return jax.tree.map(lambda out: jnp.mean(out, axis=0), outputs)
 
     @staticmethod
     def std(outputs: PyTree[Array]) -> PyTree[Array]:
@@ -635,7 +634,7 @@ class WrapEnsemble[M: eqx.Module](eqx.Module):
         -------
         A pytree matching a single member's output, each leaf's spread over the members.
         """
-        return jtu.tree_map(lambda out: jnp.std(out, axis=0), outputs)
+        return jax.tree.map(lambda out: jnp.std(out, axis=0), outputs)
 
     @staticmethod
     def min(outputs: PyTree[Array]) -> PyTree[Array]:
@@ -650,7 +649,7 @@ class WrapEnsemble[M: eqx.Module](eqx.Module):
         -------
         A pytree matching a single member's output, each leaf reduced over the members.
         """
-        return jtu.tree_map(lambda out: jnp.min(out, axis=0), outputs)
+        return jax.tree.map(lambda out: jnp.min(out, axis=0), outputs)
 
     @staticmethod
     def max(outputs: PyTree[Array]) -> PyTree[Array]:
@@ -665,7 +664,7 @@ class WrapEnsemble[M: eqx.Module](eqx.Module):
         -------
         A pytree matching a single member's output, each leaf reduced over the members.
         """
-        return jtu.tree_map(lambda out: jnp.max(out, axis=0), outputs)
+        return jax.tree.map(lambda out: jnp.max(out, axis=0), outputs)
 
     def select(self, indices: Sequence[int]) -> "WrapEnsemble[M]":
         return WrapEnsemble([self.models[i] for i in indices])
@@ -696,7 +695,7 @@ class WrapEnsemble[M: eqx.Module](eqx.Module):
         `num_members`.
         """
         indices = jr.choice(key, len(self.models), (num_members,), replace=replace)
-        return jtu.tree_map(lambda out: out[indices], outputs)
+        return jax.tree.map(lambda out: out[indices], outputs)
 
 
 class WrapResidual(eqx.Module):
@@ -753,7 +752,7 @@ class WrapResidual(eqx.Module):
         if callable(nominal):
             self.nominal = nominal
         else:
-            self.nominal = jtu.tree_map(jnp.asarray, nominal)
+            self.nominal = jax.tree.map(jnp.asarray, nominal)
         self.correction = correction
         self.freeze_nominal = freeze_nominal
 
@@ -780,10 +779,10 @@ class WrapResidual(eqx.Module):
             nominal = jax.lax.stop_gradient(nominal)
         correction = self.correction(x)
 
-        same_structure = jtu.tree_structure(nominal) == jtu.tree_structure(correction)
+        same_structure = jax.tree.structure(nominal) == jax.tree.structure(correction)
         if not same_structure or any(
             jnp.shape(n) != jnp.shape(c)
-            for n, c in zip(jtu.tree_leaves(nominal), jtu.tree_leaves(correction))
+            for n, c in zip(jax.tree.leaves(nominal), jax.tree.leaves(correction))
         ):
             raise ValueError(
                 "The output of `correction` must have the same pytree structure and "
@@ -792,7 +791,7 @@ class WrapResidual(eqx.Module):
                 f"`{eqx.tree_pformat(correction)}`."
             )
 
-        return jtu.tree_map(jnp.add, nominal, correction)
+        return jax.tree.map(jnp.add, nominal, correction)
 
 
 class WrapSPDResidual(eqx.Module):

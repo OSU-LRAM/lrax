@@ -25,7 +25,7 @@ from typing import Literal
 import jax
 import jax.numpy as jnp
 from equinox.internal import doc_repr
-from jaxtyping import Array, ArrayLike, Float, Scalar, ScalarLike, Shaped
+from jaxtyping import Array, ArrayLike, Float, PyTree, Scalar, ScalarLike, Shaped
 
 from ..typing import DistanceFn, Kernel, Point
 
@@ -429,3 +429,37 @@ def gram(
         raise ValueError(f"`batch_size` must be positive. Got {batch_size}.")
 
     return jax.lax.map(jax.checkpoint(row), xs, batch_size=batch_size)
+
+
+def product(kernels: PyTree[Kernel]) -> Kernel:
+    r"""Multiply kernels that each act on one part of a sample.
+
+    .. math::
+
+        k(x, y) = \prod_{i} k_{i}(x_{i}, y_{i})
+
+    where :math:`k_{i}` is the :math:`i`th kernel and :math:`x_{i}` and :math:`y_{i}`
+    are the parts of the samples it acts on. This builds a kernel on a product space
+    from kernels on its factors, such as a position paired with an orientation, and
+    the product of positive definite kernels is positive definite.
+
+    Parameters
+    ----------
+    - `kernels`: The kernels to multiply, arranged in a tree whose structure is a
+        prefix of the samples. Each kernel receives the subtree of the samples at its
+        own position, so a kernel may act on a single array or on a whole branch.
+        Callables are treated as leaves, so kernels that are themselves pytrees, such
+        as Equinox modules, are not flattened.
+
+    Returns
+    -------
+    The product kernel, taking two samples and returning a scalar.
+    """
+    if not jax.tree.leaves(kernels, is_leaf=callable):
+        raise ValueError("`kernels` must hold at least one kernel.")
+
+    def kernel(x: Point, y: Point) -> Scalar:
+        values = jax.tree.map(lambda k, a, b: k(a, b), kernels, x, y, is_leaf=callable)
+        return jax.tree.reduce(jnp.multiply, values)
+
+    return kernel
