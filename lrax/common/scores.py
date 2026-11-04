@@ -24,8 +24,8 @@ from collections.abc import Callable
 import jax
 import jax.numpy as jnp
 import jax.scipy.linalg as jsl
-import jax.tree_util as jtu
 from jax.flatten_util import ravel_pytree
+from jax.tree_util import KeyPath, keystr
 from jaxtyping import Array, ArrayLike, Float, Scalar, ScalarLike, Shaped
 
 from ..typing import Kernel, Point
@@ -33,18 +33,18 @@ from .kernels import gaussian
 
 
 def _get_sample_size(samples: Shaped[Point, "samples"]) -> int:
-    def check(path: jtu.KeyPath, leaf: ArrayLike) -> int:
+    def check(path: KeyPath, leaf: ArrayLike) -> int:
         shape = jnp.shape(leaf)
 
         if not shape:
             raise ValueError(
                 "Every leaf must carry a leading sample axis. Got a scalar leaf at "
-                f"`samples{jtu.keystr(path)}`."
+                f"`samples{keystr(path)}`."
             )
 
         return shape[0]
 
-    leaves = jtu.tree_leaves_with_path(samples)
+    leaves = jax.tree.leaves_with_path(samples)
 
     if not leaves:
         raise ValueError("`samples` must have at least one array leaf.")

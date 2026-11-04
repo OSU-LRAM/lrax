@@ -24,9 +24,9 @@ from pathlib import Path
 from typing import Any, Literal, assert_never
 
 import equinox as eqx
+import jax
 import jax.numpy as jnp
 import jax.random as jr
-import jax.tree_util as jtu
 import optax
 from jaxtyping import PRNGKeyArray, PyTree
 from lightning.pytorch import LightningDataModule
@@ -172,7 +172,7 @@ class ModelTrainer(BaseTrainer):
             for batch in tqdm(loader, desc=f"Epoch {epoch}", leave=False):
                 # split the key into one key per element of the batch; we need this
                 # when training stochastic models that depend on a key for each rollout
-                batch_size = jtu.tree_leaves(batch)[0].shape[0]
+                batch_size = jax.tree.leaves(batch)[0].shape[0]
                 keys = jr.split(jr.fold_in(key, step), batch_size)
 
                 result = make_training_step(model, opt_state, batch, keys)
@@ -281,7 +281,7 @@ class PolicyTrainer(BaseTrainer):
         # check whether the optimizer is a single optimizer or multiple optimizers
         is_optim = lambda x: isinstance(x, optax.GradientTransformation)
         params = eqx.filter(model, eqx.is_inexact_array)
-        opt_state = jtu.tree_map(lambda o: o.init(params), optim, is_leaf=is_optim)
+        opt_state = jax.tree.map(lambda o: o.init(params), optim, is_leaf=is_optim)
 
         algorithm_state = algorithm.init(model, env, key=init_key)
 

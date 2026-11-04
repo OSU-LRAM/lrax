@@ -24,7 +24,6 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 import jax.random as jr
-import jax.tree_util as jtu
 from jax import lax
 from jaxtyping import Array, ArrayLike, PRNGKeyArray, PyTree, ScalarLike
 from optax import OptState
@@ -312,7 +311,7 @@ class PPO(AbstractAlgorithm):
 
         params, static = eqx.partition(model, eqx.is_inexact_array)
 
-        batch_size = jtu.tree_leaves(batch)[0].shape[0]
+        batch_size = jax.tree.leaves(batch)[0].shape[0]
         minibatch_size = batch_size // self.num_minibatches
 
         loss_and_grad = eqx.filter_value_and_grad(self._loss, has_aux=True)
@@ -345,8 +344,8 @@ class PPO(AbstractAlgorithm):
         ) -> tuple[tuple[PyTree, OptState], Metrics]:
             params, opt_state = carry
             perm = jr.permutation(epoch_key, batch_size)
-            shuffled = jtu.tree_map(lambda x: x[perm], batch)
-            minibatches = jtu.tree_map(
+            shuffled = jax.tree.map(lambda x: x[perm], batch)
+            minibatches = jax.tree.map(
                 lambda x: x.reshape(self.num_minibatches, minibatch_size, *x.shape[1:]),
                 shuffled,
             )
@@ -359,7 +358,7 @@ class PPO(AbstractAlgorithm):
         (params, opt_state), metrics = lax.scan(
             _epoch_step, (params, opt_state), epoch_keys
         )
-        metrics = jtu.tree_map(jnp.mean, metrics)
+        metrics = jax.tree.map(jnp.mean, metrics)
         model = eqx.combine(params, static)
         return model, opt_state, metrics
 
@@ -418,14 +417,14 @@ class PPO(AbstractAlgorithm):
             advantages=advantages,
             returns=returns,
         )
-        batch = jtu.tree_map(lambda x: x.reshape(total_size, *x.shape[2:]), batch)
+        batch = jax.tree.map(lambda x: x.reshape(total_size, *x.shape[2:]), batch)
 
         model, opt_state, metrics = self._update(
             model, opt_state, optim, batch, key=update_key
         )
 
         # merge the environment metrics with the loss metrics
-        metrics.update(jtu.tree_map(jnp.mean, rollouts.metrics))
+        metrics.update(jax.tree.map(jnp.mean, rollouts.metrics))
         metrics["mean_reward"] = jnp.mean(rollouts.rewards)
         metrics["done_rate"] = jnp.mean(rollouts.dones)
 

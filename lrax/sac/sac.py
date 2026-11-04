@@ -24,7 +24,6 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 import jax.random as jr
-import jax.tree_util as jtu
 from jax import lax
 from jaxtyping import Array, PRNGKeyArray, PyTree
 from optax import OptState
@@ -265,7 +264,7 @@ class SAC(AbstractAlgorithm):
                 critic_target, eqx.is_inexact_array
             )
             critic_arrays, _ = eqx.partition(model.critic, eqx.is_inexact_array)
-            target_arrays = jtu.tree_map(
+            target_arrays = jax.tree.map(
                 lambda t, c: (1.0 - self.tau) * t + self.tau * c,
                 target_arrays,
                 critic_arrays,
@@ -280,7 +279,7 @@ class SAC(AbstractAlgorithm):
         (model_params, state_params, opt_state), metrics = lax.scan(
             _grad_step, (model_params, state_params, opt_state), step_keys
         )
-        metrics = jtu.tree_map(jnp.mean, metrics)
+        metrics = jax.tree.map(jnp.mean, metrics)
         model = eqx.combine(model_params, model_static)
         alg_state = eqx.combine(state_params, state_static)
         return model, alg_state, opt_state, metrics
@@ -304,7 +303,7 @@ class SAC(AbstractAlgorithm):
         rollouts, env_state = self._rollout(model, env, env_state, key=rollout_key)
 
         total_size = self.num_steps * env.num_envs
-        flat = jtu.tree_map(lambda x: x.reshape(total_size, *x.shape[2:]), rollouts)
+        flat = jax.tree.map(lambda x: x.reshape(total_size, *x.shape[2:]), rollouts)
         critic_target, buffer = alg_state
         buffer = buffer.add(
             flat.obs,
@@ -361,7 +360,7 @@ class SAC(AbstractAlgorithm):
             key: PRNGKeyArray,
         ) -> tuple[PyTree, PyTree, OptState, Metrics]:
             del key
-            zeros = jtu.tree_map(lambda s: jnp.zeros(s.shape, s.dtype), metrics_shape)
+            zeros = jax.tree.map(lambda s: jnp.zeros(s.shape, s.dtype), metrics_shape)
             return model_params, state_params, opt_state, cast(Metrics, zeros)
 
         model_params, state_params, opt_state, metrics = lax.cond(
@@ -378,7 +377,7 @@ class SAC(AbstractAlgorithm):
 
         # merge the environment metrics with the loss metrics
         metrics = dict(metrics)
-        metrics.update(jtu.tree_map(jnp.mean, flat.metrics))
+        metrics.update(jax.tree.map(jnp.mean, flat.metrics))
         metrics["mean_reward"] = jnp.mean(flat.rewards)
         metrics["done_rate"] = jnp.mean(flat.dones)
         metrics["buffer_size"] = buffer.size
