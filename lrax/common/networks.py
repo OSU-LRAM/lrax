@@ -19,6 +19,7 @@
 # THE SOFTWARE.
 
 from collections.abc import Callable, Sequence
+from functools import partial
 from typing import Literal
 
 import equinox as eqx
@@ -28,7 +29,7 @@ import jax.numpy as jnp
 import jax.random as jr
 import jax.tree_util as jtu
 from equinox.internal import doc_repr
-from jaxtyping import Array, PRNGKeyArray, PyTree
+from jaxtyping import Array, ArrayLike, PRNGKeyArray, PyTree
 
 from ..typing import Activation
 from .activations import lipswish
@@ -696,3 +697,315 @@ class WrapEnsemble[M: eqx.Module](eqx.Module):
         """
         indices = jr.choice(key, len(self.models), (num_members,), replace=replace)
         return jtu.tree_map(lambda out: out[indices], outputs)
+
+
+class WrapResidual(eqx.Module):
+    """Composes a nominal value with a learned additive correction.
+
+    The output is `nominal + correction(x)`, where `nominal` is either a fixed value
+    (e.g., a standard matrix) or a callable evaluated on the input (e.g., a physics
+    model). This is the usual residual-learning structure used for grey-box models,
+    where the correction only has to capture what the nominal model gets wrong.
+
+    Both the nominal value and the correction may be pytrees of arrays, in which case
+    they are summed leaf-by-leaf.
+    """
+
+    nominal: PyTree[Array] | Callable[[Array], PyTree[Array]]
+    correction: Callable[[Array], PyTree[Array]]
+    freeze_nominal: bool = eqx.field(static=True)
+
+    def __init__(
+        self,
+        nominal: PyTree[ArrayLike] | Callable[[Array], PyTree[Array]],
+        correction: Callable[[Array], PyTree[Array]],
+        freeze_nominal: bool = True,
+    ):
+        """Initialize a residual network.
+
+        Parameters
+        ----------
+        - `nominal`: The nominal value. This can be either a pytree of arrays, which is
+            returned as-is for every input, or a callable (e.g., an `eqx.Module`) that
+            maps the input to the nominal value. Note that Python lists and tuples are
+            treated as pytrees, so pass `jnp.array([...])` for an array nominal.
+        - `correction`: The callable (e.g., an `eqx.nn.MLP`) that maps the input to an
+            additive correction. Its output must have the same pytree structure and
+            leaf shapes as the nominal value.
+        - `freeze_nominal`: Whether to block gradients through the nominal value. Set
+            this to `False` to jointly learn any parameters in `nominal` (e.g., for
+            system identification). Defaults to `True`.
+
+        Notes
+        -----
+        `freeze_nominal` only stops gradients. Optimizers that update parameters
+        independently of their gradients (e.g., weight decay in `optax.adamw`) will
+        still modify a frozen nominal unless it is also excluded with a `filter_spec`.
+
+        It is often helpful for the model to start at the nominal value. For an
+        `eqx.nn.MLP` correction, this can be done by zeroing its final layer:
+        ```python
+        >>> correction = affine_initialization(
+        ...     mlp, 0.0, 0.0, lambda m: (m.layers[-1].weight, m.layers[-1].bias)
+        ... )
+        ```
+        """
+        if callable(nominal):
+            self.nominal = nominal
+        else:
+            self.nominal = jtu.tree_map(jnp.asarray, nominal)
+        self.correction = correction
+        self.freeze_nominal = freeze_nominal
+
+    def __call__(self, x: Array) -> PyTree[Array]:
+        """Forward pass of the residual network.
+
+        Parameters
+        ----------
+        - `x`: A JAX array to provide as input to `nominal` (if callable) and
+            `correction`.
+
+        Returns
+        -------
+        The leaf-wise sum of the nominal value and the correction.
+
+        Raises
+        ------
+        `ValueError` if the correction does not have exactly the same pytree structure
+        and leaf shapes as the nominal value. Similar to diffrax, broadcasting is
+        intentionally disallowed.
+        """
+        nominal = self.nominal(x) if callable(self.nominal) else self.nominal
+        if self.freeze_nominal:
+            nominal = jax.lax.stop_gradient(nominal)
+        correction = self.correction(x)
+
+        same_structure = jtu.tree_structure(nominal) == jtu.tree_structure(correction)
+        if not same_structure or any(
+            jnp.shape(n) != jnp.shape(c)
+            for n, c in zip(jtu.tree_leaves(nominal), jtu.tree_leaves(correction))
+        ):
+            raise ValueError(
+                "The output of `correction` must have the same pytree structure and "
+                "leaf shapes as `nominal`. Got a nominal value of "
+                f"`{eqx.tree_pformat(nominal)}` and a correction of "
+                f"`{eqx.tree_pformat(correction)}`."
+            )
+
+        return jtu.tree_map(jnp.add, nominal, correction)
+
+
+class WrapSPDResidual(eqx.Module):
+    """Composes a nominal SPD matrix with a learned correction in log-Cholesky space.
+
+    Given the Cholesky factor `L₀` of the nominal matrix, the correction is added to
+    the logarithm of the diagonal of `L₀` and to its strictly-lower triangle. The
+    output is `L @ L.T`, where `L` is the corrected factor with its diagonal mapped
+    back through `exp`. This means that
+
+    - the output is SPD for any correction,
+    - the correction can both increase and decrease the nominal matrix, and
+    - a zero correction returns the nominal matrix exactly.
+
+    This corresponds to the log-Cholesky metric on SPD matrices ("Riemannian Geometry
+    of Symmetric Positive Definite Matrices via Cholesky Decomposition", Zhenhua Lin).
+    Unlike a log-Euclidean residual, it does not require an eigendecomposition, whose
+    gradients are undefined when the composed matrix has repeated eigenvalues (e.g., a
+    diagonal nominal with repeated entries and a zero-initialized correction).
+    """
+
+    nominal: Array | Callable[[Array], Array]
+    correction: Callable[[Array], Array]
+    freeze_nominal: bool = eqx.field(static=True)
+
+    def __init__(
+        self,
+        nominal: ArrayLike | Callable[[Array], Array],
+        correction: Callable[[Array], Array],
+        freeze_nominal: bool = True,
+    ):
+        """Initialize an SPD residual network.
+
+        Parameters
+        ----------
+        - `nominal`: The nominal SPD matrix, with shape `(*batch, n, n)`. This can be
+            either an array, which is used for every input, or a callable (e.g., an
+            `eqx.Module`) that maps the input to the nominal matrix. A leading batch
+            shape can be used to compose a stack of matrices (e.g., the outputs of a
+            `StackedSPD`).
+        - `correction`: The callable (e.g., an `eqx.nn.MLP`) that maps the input to the
+            correction, with shape `(*batch, n * (n + 1) / 2)`. The first `n` entries
+            correct the log-diagonal of the Cholesky factor, and the remaining entries
+            correct its strictly-lower triangle in `jnp.tril_indices(n, -1)` order.
+        - `freeze_nominal`: Whether to block gradients through the nominal matrix. Set
+            this to `False` to jointly learn any parameters in `nominal` (e.g., for
+            system identification). Defaults to `True`.
+
+        Notes
+        -----
+        The nominal matrix must be SPD. Its Cholesky factorization is not checked, and
+        will produce NaNs otherwise. If the nominal matrix is learned, parameterize it
+        so that it remains SPD (e.g., with a callable), rather than learning the raw
+        matrix entries.
+
+        See `WrapResidual` for notes on freezing the nominal value and on initializing
+        the correction to zero.
+        """
+        self.nominal = nominal if callable(nominal) else jnp.asarray(nominal)
+        self.correction = correction
+        self.freeze_nominal = freeze_nominal
+
+    def __call__(self, x: Array) -> Array:
+        """Forward pass of the SPD residual network.
+
+        Parameters
+        ----------
+        - `x`: A JAX array to provide as input to `nominal` (if callable) and
+            `correction`.
+
+        Returns
+        -------
+        A JAX array with the same shape as the nominal matrix, `(*batch, n, n)`.
+
+        Raises
+        ------
+        `ValueError` if the nominal value is not a (stack of) square matrices, or if
+        the correction does not have shape `(*batch, n * (n + 1) / 2)`.
+        """
+        nominal = self.nominal(x) if callable(self.nominal) else self.nominal
+        if self.freeze_nominal:
+            nominal = jax.lax.stop_gradient(nominal)
+        correction = self.correction(x)
+
+        shape = jnp.shape(nominal)
+        if len(shape) < 2 or shape[-1] != shape[-2]:
+            raise ValueError(
+                "`nominal` must be a square matrix or a stack of square matrices with "
+                f"shape `(*batch, n, n)`. Got a nominal value with shape `{shape}`."
+            )
+        n = shape[-1]
+        expected = (*shape[:-2], n * (n + 1) // 2)
+        if jnp.shape(correction) != expected:
+            raise ValueError(
+                f"The output of `correction` must have shape `{expected}` for a "
+                f"nominal matrix with shape `{shape}`. Got a correction with shape "
+                f"`{jnp.shape(correction)}`."
+            )
+
+        @partial(jnp.vectorize, signature="(n,n),(m)->(n,n)")
+        def compose(M0: Array, delta: Array) -> Array:
+            L0 = jnp.linalg.cholesky(M0)
+            log_diag = jnp.log(jnp.diag(L0)) + delta[:n]
+            i_lower, j_lower = jnp.tril_indices(n, -1)
+            L = L0.at[i_lower, j_lower].add(delta[n:])
+            L = L.at[jnp.diag_indices(n)].set(jnp.exp(log_diag))
+            return L @ L.T
+
+        return compose(nominal, correction)
+
+
+class WrapPSDResidual(eqx.Module):
+    """Composes a nominal PSD matrix with a learned PSD-preserving correction.
+
+    The output is `A @ nominal @ A.T + D @ D.T`, where `A = I + ΔA` and `D` are
+    lower-triangular matrices predicted by the correction. This means that
+
+    - the output is PSD for any correction,
+    - `A` can reshape or shrink the nominal matrix, while `D @ D.T` can add to it in
+        any direction (including the null space of the nominal matrix), and
+    - a zero correction returns the nominal matrix exactly.
+
+    Unlike `WrapSPDResidual`, the nominal matrix is never factorized, so it may be
+    singular (e.g., a drag matrix that is zero on some degrees of freedom). For a
+    nominal matrix that is known to be SPD, prefer `WrapSPDResidual`.
+    """
+
+    nominal: Array | Callable[[Array], Array]
+    correction: Callable[[Array], Array]
+    freeze_nominal: bool = eqx.field(static=True)
+
+    def __init__(
+        self,
+        nominal: ArrayLike | Callable[[Array], Array],
+        correction: Callable[[Array], Array],
+        freeze_nominal: bool = True,
+    ):
+        """Initialize a PSD residual network.
+
+        Parameters
+        ----------
+        - `nominal`: The nominal PSD matrix, with shape `(*batch, n, n)`. This can be
+            either an array, which is used for every input, or a callable (e.g., an
+            `eqx.Module`) that maps the input to the nominal matrix. A leading batch
+            shape can be used to compose a stack of matrices.
+        - `correction`: The callable (e.g., an `eqx.nn.MLP`) that maps the input to the
+            correction, with shape `(*batch, n * (n + 1))`. The first half of the
+            entries are `ΔA` and the second half are `D`, each filling a lower triangle
+            in `jnp.tril_indices(n)` order (matching `PSD`).
+        - `freeze_nominal`: Whether to block gradients through the nominal matrix. Set
+            this to `False` to jointly learn any parameters in `nominal` (e.g., for
+            system identification). Defaults to `True`.
+
+        Notes
+        -----
+        Do not initialize the correction to exactly zero. The gradient of `D @ D.T`
+        with respect to `D` vanishes at `D = 0`, so a zero-initialized `D` never
+        learns, and the output can then never leave the range of the nominal matrix.
+        Instead, scale the final layer down so that the model starts close to the
+        nominal matrix:
+        ```python
+        >>> correction = affine_initialization(
+        ...     mlp, 1e-2, 0.0, lambda m: (m.layers[-1].weight, m.layers[-1].bias)
+        ... )
+        ```
+        """
+        self.nominal = nominal if callable(nominal) else jnp.asarray(nominal)
+        self.correction = correction
+        self.freeze_nominal = freeze_nominal
+
+    def __call__(self, x: Array) -> Array:
+        """Forward pass of the PSD residual network.
+
+        Parameters
+        ----------
+        - `x`: A JAX array to provide as input to `nominal` (if callable) and
+            `correction`.
+
+        Returns
+        -------
+        A JAX array with the same shape as the nominal matrix, `(*batch, n, n)`.
+
+        Raises
+        ------
+        `ValueError` if the nominal value is not a (stack of) square matrices, or if
+        the correction does not have shape `(*batch, n * (n + 1))`.
+        """
+        nominal = self.nominal(x) if callable(self.nominal) else self.nominal
+        if self.freeze_nominal:
+            nominal = jax.lax.stop_gradient(nominal)
+        correction = self.correction(x)
+
+        shape = jnp.shape(nominal)
+        if len(shape) < 2 or shape[-1] != shape[-2]:
+            raise ValueError(
+                "`nominal` must be a square matrix or a stack of square matrices with "
+                f"shape `(*batch, n, n)`. Got a nominal value with shape `{shape}`."
+            )
+        n = shape[-1]
+        expected = (*shape[:-2], n * (n + 1))
+        if jnp.shape(correction) != expected:
+            raise ValueError(
+                f"The output of `correction` must have shape `{expected}` for a "
+                f"nominal matrix with shape `{shape}`. Got a correction with shape "
+                f"`{jnp.shape(correction)}`."
+            )
+
+        @partial(jnp.vectorize, signature="(n,n),(m)->(n,n)")
+        def compose(M0: Array, delta: Array) -> Array:
+            i_lower, j_lower = jnp.tril_indices(n)
+            delta_A, delta_D = jnp.split(delta, 2)
+            A = jnp.eye(n, dtype=delta.dtype).at[i_lower, j_lower].add(delta_A)
+            D = jnp.zeros((n, n), delta.dtype).at[i_lower, j_lower].set(delta_D)
+            return A @ M0 @ A.T + D @ D.T
+
+        return compose(nominal, correction)
