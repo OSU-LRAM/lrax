@@ -78,6 +78,30 @@ def _next_version(root_dir: Path, name: str) -> int:
     return max(versions, default=-1) + 1
 
 
+def latest_version(root_dir: str | Path, name: str) -> Path | None:
+    """Find the run directory of the latest version of a run logged by `FileLogger`.
+
+    Parameters
+    ----------
+    - `root_dir`: The directory containing the versioned run directories.
+    - `name`: The prefix of the run directory, e.g., `f"{name}_{version}"`.
+
+    Returns
+    -------
+    The run directory with the highest version, or `None` if there is no run.
+    """
+    root_dir = Path(root_dir)
+    if not root_dir.exists():
+        return None
+
+    versions = [
+        int(version)
+        for path in root_dir.glob(f"{name}_*")
+        if (version := path.name.removeprefix(f"{name}_")).isdigit()
+    ]
+    return root_dir / f"{name}_{max(versions)}" if versions else None
+
+
 class FileLogger(Logger):
     """Logs hyperparameters and metrics to CSV files in a versioned run directory."""
 

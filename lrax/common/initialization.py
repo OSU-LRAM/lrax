@@ -22,10 +22,11 @@ from collections.abc import Callable
 
 import equinox as eqx
 import jax.numpy as jnp
+from jaxtyping import ArrayLike
 
 
 def affine_initialization(
-    model: eqx.Module, scale: float, shift: float, where: Callable
+    model: eqx.Module, scale: float, shift: ArrayLike, where: Callable
 ):
     """Apply an affine transformation to the chosen `Linear` layer(s) in a model.
 
@@ -33,7 +34,8 @@ def affine_initialization(
     ----------
     - `model`: The model to initialize.
     - `scale`: Rescaling applied to the selected weights in `model`.
-    - `shift`: Translation applied to the selected biases in `model`.
+    - `shift`: Translation applied to the selected biases in `model`, broadcast to
+        their shape.
     - `where`: Function used to get the leaves that should be modified.
 
     Returns
