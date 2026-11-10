@@ -463,3 +463,92 @@ def product(kernels: PyTree[Kernel]) -> Kernel:
         return jax.tree.reduce(jnp.multiply, values)
 
     return kernel
+
+
+def median_heuristic(
+    xs: Shaped[Point, "n"],
+    *,
+    coordinatewise: bool = False,
+    distance: DistanceFn = _euclidean,
+) -> Float[Array, "?*sigma"]:
+    r"""Median heuristic for the bandwidths of a kernel.
+
+    - "A Kernel Two-Sample Test", Arthur Gretton, Karsten M. Borgwardt, Malte J. Rasch,
+      Bernhard Schölkopf, and Alexander Smola.
+    - "Large Sample Analysis of the Median Heuristic", Damien Garreau, Wittawat
+      Jitkrittum, and Motonobu Kanagawa.
+
+    .. math::
+
+        \sigma = \operatorname{median}_{i < j} \left\|d(x_{i}, x_{j})\right\|_{2}
+
+    where :math:`d` is the distance function. The coordinatewise variant takes the
+    median of each coordinate's magnitude :math:`|d_{k}(x_{i}, x_{j})|` instead.
+
+    Parameters
+    ----------
+    - `xs`: The samples, with a leading sample axis on each leaf.
+    - `coordinatewise`: Whether to give each coordinate of the distance its own
+        bandwidth. Keyword-only argument.
+    - `distance`: See `gaussian`. Keyword-only argument.
+
+    Returns
+    -------
+    The bandwidths, a scalar or an array matching the output of `distance` when
+    `coordinatewise` is set.
+    """
+    n = jnp.shape(jax.tree.leaves(xs)[0])[0]
+
+    if n < 2:
+        raise ValueError(f"`xs` must hold at least two samples. Got {n}.")
+
+    rows, cols = jnp.triu_indices(n, k=1)
+
+    def pick(indices: Array) -> Point:
+        return jax.tree.map(lambda leaf: jnp.asarray(leaf)[indices], xs)
+
+    distances = jax.vmap(distance)(pick(rows), pick(cols))
+
+    if coordinatewise:
+        return jnp.median(jnp.abs(distances), axis=0)
+
+    return jnp.median(jnp.linalg.norm(distances.reshape(rows.size, -1), axis=-1))
+
+
+def transition_heuristic(
+    trajectories: Shaped[Point, "n steps"],
+    *,
+    distance: DistanceFn = _euclidean,
+) -> Float[Array, "?*sigma"]:
+    r"""Transition heuristic for the bandwidths of a kernel on the states of a
+    trajectory.
+
+    .. math::
+
+        \sigma_{k} = \operatorname{std}_{i, t}\, d_{k}(x_{i, t + 1}, x_{i, t})
+
+    where :math:`d_{k}` is the :math:`k`th coordinate of the distance function and the
+    standard deviation pools the one-step increments over every trajectory and step.
+
+    Parameters
+    ----------
+    - `trajectories`: The trajectories, with leading trajectory and step axes on each
+        leaf.
+    - `distance`: See `gaussian`. Keyword-only argument.
+
+    Returns
+    -------
+    The bandwidths, matching the output of `distance`.
+    """
+    steps = jnp.shape(jax.tree.leaves(trajectories)[0])[1]
+
+    if steps < 2:
+        raise ValueError(f"`trajectories` must hold at least two steps. Got {steps}.")
+
+    def pool(leaf: ArrayLike, start: int, stop: int) -> Array:
+        leaf = jnp.asarray(leaf)[:, start:stop]
+        return leaf.reshape(-1, *leaf.shape[2:])
+
+    current = jax.tree.map(lambda leaf: pool(leaf, 0, steps - 1), trajectories)
+    following = jax.tree.map(lambda leaf: pool(leaf, 1, steps), trajectories)
+    return jnp.std(jax.vmap(distance)(following, current), axis=0)
