@@ -39,6 +39,27 @@ _lipswish = doc_repr(lipswish, "<function lipswish>")
 _softplus = doc_repr(jnn.softplus, "<function softplus>")
 
 
+def _vec_to_sym(x: Array, n: int) -> Array:
+    """Unpack a vector into a symmetric `(n, n)` matrix."""
+    diag, off_diag = jnp.split(x, (n,), axis=-1)
+    i_lower, j_lower = jnp.tril_indices(n, -1)
+    U = jnp.diag(diag)
+    U = U.at[i_lower, j_lower].set(off_diag)
+    return U.at[j_lower, i_lower].set(off_diag)
+
+
+def _vec_to_tril(x: Array, n: int) -> Array:
+    """Unpack a vector into a lower-triangular `(n, n)` matrix."""
+    i_lower, j_lower = jnp.tril_indices(n)
+    return jnp.zeros((n, n), x.dtype).at[i_lower, j_lower].set(x)
+
+
+def _transform_eigenvalues(U: Array, f: Callable[[Array], Array]) -> Array:
+    """Apply a function to the eigenvalues of `U`."""
+    V, w = jax.lax.linalg.eigh(U, sort_eigenvalues=False)
+    return V @ jnp.diag(f(w)) @ V.T
+
+
 class SPD(eqx.Module):
     """Symmetric positive-definite network.
 
@@ -101,14 +122,8 @@ class SPD(eqx.Module):
         -------
         A JAX array with shape `(diag_size, diag_size)`.
         """
-        x = self.mlp(x)
-        diag, off_diag = jnp.split(x, (self.shape[0],), axis=-1)
-        i_lower, j_lower = jnp.tril_indices(self.shape[0], -1)
-        U = jnp.diag(diag)
-        U = U.at[i_lower, j_lower].set(off_diag)
-        U = U.at[j_lower, i_lower].set(off_diag)
-        V, w = jax.lax.linalg.eigh(U, sort_eigenvalues=False)
-        return V @ jnp.diag(self.metric(w)) @ V.T
+        U = _vec_to_sym(self.mlp(x), self.shape[0])
+        return _transform_eigenvalues(U, self.metric)
 
 
 class StackedSPD(eqx.Module):
@@ -206,13 +221,7 @@ class StackedSPD(eqx.Module):
 
         @eqx.filter_vmap
         def to_spd(y):
-            diag, off_diag = jnp.split(y, (self.shape[-1],), axis=-1)
-            i_lower, j_lower = jnp.tril_indices(self.shape[-1], -1)
-            U = jnp.diag(diag)
-            U = U.at[i_lower, j_lower].set(off_diag)
-            U = U.at[j_lower, i_lower].set(off_diag)
-            V, w = jax.lax.linalg.eigh(U, sort_eigenvalues=False)
-            return V @ jnp.diag(self.metric(w)) @ V.T
+            return _transform_eigenvalues(_vec_to_sym(y, self.shape[-1]), self.metric)
 
         M = jnp.zeros(self.shape, x_full.dtype)
         if full_idx:
@@ -279,9 +288,7 @@ class PSD(eqx.Module):
         -------
         A JAX array with shape `(diag_size, diag_size)`.
         """
-        x = self.mlp(x)
-        i_lower, j_lower = jnp.tril_indices(self.shape[0])
-        L = jnp.zeros(self.shape, x.dtype).at[i_lower, j_lower].set(x)
+        L = _vec_to_tril(self.mlp(x), self.shape[0])
         return L @ L.T
 
 
@@ -1001,10 +1008,9 @@ class WrapPSDResidual(eqx.Module):
 
         @partial(jnp.vectorize, signature="(n,n),(m)->(n,n)")
         def compose(M0: Array, delta: Array) -> Array:
-            i_lower, j_lower = jnp.tril_indices(n)
             delta_A, delta_D = jnp.split(delta, 2)
-            A = jnp.eye(n, dtype=delta.dtype).at[i_lower, j_lower].add(delta_A)
-            D = jnp.zeros((n, n), delta.dtype).at[i_lower, j_lower].set(delta_D)
+            A = jnp.eye(n, dtype=delta.dtype) + _vec_to_tril(delta_A, n)
+            D = _vec_to_tril(delta_D, n)
             return A @ M0 @ A.T + D @ D.T
 
         return compose(nominal, correction)
