@@ -60,11 +60,15 @@ class Job:
     "train", ...]` or a call to a standalone script. To sweep over a parameter (e.g.,
     a random seed), build one `Job` per value at the call site rather than modeling
     the sweep here.
+
+    `dependencies` holds the IDs of the jobs that must complete successfully before this
+    job starts, e.g., the IDs returned by `submit_slurm_job`.
     """
 
     name: str
     command: Sequence[str]
     resources: Resources | None = None
+    dependencies: Sequence[str] = ()
 
 
 def make_sbatch_script(
@@ -101,6 +105,8 @@ def make_sbatch_script(
     if cluster.mail_user is not None:
         headers.append(f"#SBATCH --mail-type={cluster.mail_type}")
         headers.append(f"#SBATCH --mail-user={cluster.mail_user}")
+    if job.dependencies:
+        headers.append(f"#SBATCH --dependency=afterok:{':'.join(job.dependencies)}")
 
     body = [f"module load {module}" for module in cluster.modules]
     body.append(f"cd {cluster.work_dir} || exit 1")
@@ -117,7 +123,7 @@ def submit_slurm_job(
     *,
     output_dir: str | Path = "run_output",
     dry_run: bool = False,
-) -> None:
+) -> str | None:
     """Submit `job` to `cluster` via `sbatch`.
 
     Parameters
@@ -128,19 +134,30 @@ def submit_slurm_job(
         `"run_output"`. (Keyword only argument.)
     - `dry_run`: If `True`, print the rendered script instead of submitting it.
         Defaults to `False`. (Keyword only argument.)
+
+    Returns
+    -------
+    The ID of the submitted job, or `None` for a dry run or a failed submission.
     """
     script = make_sbatch_script(job, cluster, output_dir)
 
     if dry_run:
         print(f"\n{'=' * 60}\nDRY RUN - Would submit: {job.name}\n{'=' * 60}\n{script}")
-        return
+        return None
 
     print(f"Submitting: {job.name}")
     result = subprocess.run(
-        ["sbatch"], input=script, text=True, capture_output=True, check=False
+        ["sbatch", "--parsable"],
+        input=script,
+        text=True,
+        capture_output=True,
+        check=False,
     )
 
-    if result.returncode == 0:
-        print(f"  -> Submitted: {result.stdout.strip()}")
-    else:
+    if result.returncode != 0:
         print(f"  -> ERROR: {result.stderr.strip()}")
+        return None
+
+    job_id = result.stdout.strip().split(";")[0]
+    print(f"  -> Submitted batch job {job_id}")
+    return job_id
