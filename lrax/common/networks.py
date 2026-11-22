@@ -97,7 +97,7 @@ class CholeskyOptions(TypedDict, total=False):
 
 
 class GramOptions(TypedDict, total=False):
-    """Options for `PSD` with `method="gram"`.
+    """Options for `PSD` and `WrapPSDResidual` with `method="gram"`.
 
     - `eps`: A non-negative constant added to the diagonal of the output, which bounds
         its smallest eigenvalue from below. The output is only SPD if `eps > 0`.
@@ -816,14 +816,16 @@ class WrapPSDResidual(eqx.Module):
 
     nominal: Array | Callable[[Array], Array]
     correction: Callable[[Array], Array]
-    method: Literal["cholesky", "congruence"] = eqx.field(static=True)
+    method: Literal["cholesky", "gram", "congruence"] = eqx.field(static=True)
     freeze_nominal: bool = eqx.field(static=True)
+    _eps: float = eqx.field(static=True)
 
     def __init__(
         self,
         nominal: ArrayLike | Callable[[Array], Array],
         correction: Callable[[Array], Array],
-        method: Literal["cholesky", "congruence"] = "congruence",
+        method: Literal["cholesky", "gram", "congruence"] = "congruence",
+        options: GramOptions | None = None,
         freeze_nominal: bool = True,
     ):
         """Initialize a PSD residual network.
@@ -851,6 +853,14 @@ class WrapPSDResidual(eqx.Module):
                 ("Riemannian Geometry of Symmetric Positive Definite Matrices via
                 Cholesky Decomposition", Zhenhua Lin), and matches `PSD` with
                 `method="cholesky"` and a `jnp.exp` `diagonal_fn` when `M₀ = I`.
+            - `"gram"`: The correction is added to the Gram factor of `M₀`. That is,
+                given the Cholesky factor `L₀` of `M₀ - eps * I`, the correction is
+                added to the lower triangle of `L₀` (in `jnp.tril_indices(n)` order),
+                and the output is `L @ L.T + eps * I`, where `L` is the corrected
+                factor. The correction has shape `(*batch, n * (n + 1) / 2)`.
+                `M₀ - eps * I` must be SPD, and the output is PSD (SPD if `eps > 0`).
+                This matches `PSD` with `method="gram"` and the same `eps` when
+                `M₀ = (1 + eps) * I`.
             - `"congruence"`: The output is `A @ M₀ @ A.T + D @ D.T`, where
                 `A = I + ΔA` and `D` are lower-triangular matrices. The correction has
                 shape `(*batch, n * (n + 1))`, where the first half of the entries are
@@ -859,23 +869,31 @@ class WrapPSDResidual(eqx.Module):
                 direction (including the null space of `M₀`). Since `M₀` is never
                 factorized, it may be singular (e.g., a drag matrix that is zero on
                 some degrees of freedom), and the output is PSD.
+        - `options`: A dictionary of options for `method`. Only `"gram"` takes options;
+            see `GramOptions`. Options that are not given take their default values.
+            Defaults to `None`.
         - `freeze_nominal`: Whether to block gradients through the nominal matrix. Set
             this to `False` to jointly learn any parameters in `nominal` (e.g., for
             system identification). Defaults to `True`.
 
         Raises
         ------
-        `ValueError` if `method` is unknown.
+        `ValueError` if `method` is unknown, if `options` contains an option that
+        `method` does not accept, or if `eps` is negative.
 
         Notes
         -----
-        For `"cholesky"`, the nominal matrix must be SPD. Its Cholesky factorization is
-        not checked, and will produce NaNs otherwise. If the nominal matrix is learned,
+        For `"cholesky"` and `"gram"`, the matrix that is factorized (`M₀` and
+        `M₀ - eps * I`, respectively) must be SPD. Its Cholesky factorization is not
+        checked, and will produce NaNs otherwise. If the nominal matrix is learned,
         parameterize it so that it remains SPD (e.g., with a callable), rather than
         learning the raw matrix entries. Unlike a log-Euclidean residual, this does not
         require an eigendecomposition, whose gradients are undefined when the composed
         matrix has repeated eigenvalues (e.g., a diagonal nominal with repeated entries
         and a zero-initialized correction).
+
+        For `"gram"`, a diagonal entry of `L` at zero is a saddle point of `L @ L.T`,
+        so the corrected factor should not be driven through zero on its diagonal.
 
         For `"congruence"`, do not initialize the correction to exactly zero. The
         gradient of `D @ D.T` with respect to `D` vanishes at `D = 0`, so a
@@ -891,15 +909,31 @@ class WrapPSDResidual(eqx.Module):
         See `WrapResidual` for notes on freezing the nominal value and on initializing
         the correction to zero.
         """
-        if method not in ("cholesky", "congruence"):
+        given: dict[str, Any] = dict(options or {})
+        match method:
+            case "cholesky" | "congruence":
+                valid, eps = frozenset(), 0.0
+            case "gram":
+                valid, eps = GramOptions.__optional_keys__, given.get("eps", 0.0)
+            case _:
+                raise ValueError(
+                    f"Unknown method `{method!r}`. Expected one of `'cholesky'`, "
+                    "`'gram'`, or `'congruence'`."
+                )
+        unknown = sorted(given.keys() - valid)
+        if unknown:
             raise ValueError(
-                f"Unknown method `{method!r}`. Expected one of `'cholesky'` or "
-                "`'congruence'`."
+                f"Unknown options `{unknown}` for method `{method!r}`. The options for "
+                f"this method are `{sorted(valid)}`."
             )
+        if eps < 0:
+            raise ValueError(f"`eps` must be non-negative. Got `{eps}`.")
+
         self.nominal = nominal if callable(nominal) else jnp.asarray(nominal)
         self.correction = correction
         self.method = method
         self.freeze_nominal = freeze_nominal
+        self._eps = float(eps)
 
     def __call__(self, x: Array) -> Array:
         """Forward pass of the PSD residual network.
@@ -939,6 +973,14 @@ class WrapPSDResidual(eqx.Module):
                 L = _transform_diagonal(L0, jnp.log) + _vec_to_tril(delta, n)
                 L = _transform_diagonal(L, jnp.exp)
                 return L @ L.T
+
+        elif self.method == "gram":
+            size = _tril_size(n)
+
+            def compose(M0: Array, delta: Array) -> Array:
+                eps = self._eps * jnp.eye(n, dtype=M0.dtype)
+                L = jnp.linalg.cholesky(M0 - eps) + _vec_to_tril(delta, n)
+                return L @ L.T + eps
 
         else:
             size = 2 * _tril_size(n)
